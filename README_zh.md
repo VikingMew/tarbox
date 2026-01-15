@@ -1,118 +1,155 @@
-# Tarbox
+<div align="center">
 
-一个基于 PostgreSQL 的分布式文件系统，专为 AI Agent 和云原生环境设计。
+# 🗄️ Tarbox
 
-## 概述
+**基于 PostgreSQL 的 AI Agent 分布式文件系统**
 
-Tarbox 是一个高性能的文件系统实现，将 PostgreSQL 作为存储后端，为 AI Agent 提供可靠、可审计的文件存储解决方案。通过 FUSE 接口提供完整的 POSIX 兼容性，支持 Kubernetes 持久卷（PV）挂载。
+[![License: MPL-2.0](https://img.shields.io/badge/License-MPL2.0-blue.svg)](LICENSE)
+[![Rust Version](https://img.shields.io/badge/rust-1.92%2B-orange.svg)](https://www.rust-lang.org)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-14%2B-336791.svg)](https://www.postgresql.org)
 
-## 核心特性
+[功能特性](#-功能特性) • [快速开始](#-快速开始) • [架构设计](#-架构设计) • [文档](#-文档) • [参与贡献](#-参与贡献)
 
-### 1. PostgreSQL 存储后端
-- 利用 PostgreSQL 的 ACID 特性保证数据一致性
-- 支持分布式部署和高可用配置
-- 元数据与数据分离存储，优化查询性能
-- 支持大对象（Large Object）存储大文件
+[English](README.md)
 
-### 2. POSIX 兼容性
-- 完整的 POSIX 文件系统接口实现
-- 支持标准文件操作（read, write, open, close, mkdir, etc.）
-- 支持文件权限和属性管理
-- 符号链接和硬链接支持
+</div>
 
-### 3. 文件系统审计
-- 完整的操作日志记录
-- 文件访问追踪和审计
-- 版本历史管理
-- 合规性报告支持
+---
 
-### 4. 分层文件系统
-- 类似 Docker 镜像层的版本化设计
-- 写时复制（Copy-on-Write）技术
-- 支持创建检查点（Checkpoint）
-- 快速回滚和层间切换
-- 通过文件系统 Hook 控制（如 `echo "checkpoint" > /.tarbox/layers/new`）
+## 📖 项目概述
 
-### 5. FUSE 接口
-- 基于 FUSE（Filesystem in Userspace）实现
-- 无需内核模块，易于部署
-- 跨平台支持（Linux, macOS, FreeBSD）
-- 高性能的用户态文件系统
+Tarbox 是一个高性能的文件系统实现,使用 PostgreSQL 作为存储后端,专为需要可靠、可审计、版本控制文件存储的 AI Agent 设计。它通过 FUSE 接口提供完整的 POSIX 兼容性,同时提供 Docker 风格的分层、Git 风格的文本差异以及 Kubernetes 集成等独特功能。
 
-### 6. 文本文件优化
-- 针对 CSV、Markdown、YAML、HTML、代码等文本文件的智能支持
-- 行级差异存储（类似 Git），层间只存储变化的行
-- 跨文件、跨层的内容去重
-- 高效的文件版本对比（`tarbox diff`）
-- 完整的文件历史追踪
-- 对应用层完全透明，保持标准 POSIX 语义
+### 为什么选择 Tarbox?
 
-### 7. 原生文件系统挂载
-- 将特定目录（如 `/bin`、`/usr`、`.venv`）挂载到宿主机原生文件系统
-- 支持只读（ro）和读写（rw）两种模式
-- 支持跨租户共享（系统目录）或租户独立（工作目录）
-- 绕过数据库，直接访问原生 FS，提供更高性能
-- 配置驱动，灵活控制挂载路径和访问权限
-- 适用场景：系统工具、虚拟环境、构建缓存、共享模型
+传统文件系统缺乏现代 AI Agent 所需的可审计性、版本控制和多租户功能。Tarbox 通过以下特性弥补了这一差距:
 
-### 8. Kubernetes 集成
-- 原生 Kubernetes PV/PVC 支持
-- CSI（Container Storage Interface）驱动
-- 动态卷供应
-- 多租户隔离
-- 快照和备份支持
+- **数据库可靠性**: PostgreSQL 的 ACID 特性确保数据一致性
+- **版本控制**: Docker 风格的分层与 Git 风格的文本文件优化
+- **多租户**: 不同 AI Agent 之间完全隔离
+- **云原生**: 内置 Kubernetes CSI 驱动,无缝部署
+- **可审计性**: 每个文件操作都被记录,用于合规和调试
 
-## 架构
+---
+
+## ✨ 功能特性
+
+### 核心能力
+
+- **🐘 PostgreSQL 存储后端**
+  - ACID 保证数据一致性
+  - 支持分布式部署和高可用
+  - 元数据与数据分离以优化性能
+  - 基于内容寻址的存储与去重
+
+- **📁 POSIX 兼容性**
+  - 标准文件操作(read, write, open, mkdir 等)
+  - 完整的权限和属性管理
+  - 支持符号链接和硬链接
+  - 与现有工具无缝集成
+
+- **🔍 完整审计追踪**
+  - 每个文件操作都记录元数据
+  - 按时间分区的审计表,高效查询
+  - 追踪所有变更的版本历史
+  - 支持合规性报告
+
+- **🐳 Docker 风格分层文件系统**
+  - 即时创建检查点和快照
+  - 写时复制(Copy-on-Write)高效存储
+  - 线性历史模型,快速层切换
+  - 通过文件系统钩子控制(如 `echo "checkpoint" > /.tarbox/layers/new`)
+
+- **📝 Git 风格文本文件优化**
+  - 对文本文件(CSV, Markdown, YAML, 代码等)进行行级差异存储
+  - 跨文件和跨层的内容去重
+  - 使用 `tarbox diff` 高效版本比较
+  - 对应用程序完全透明
+
+- **⚡ 原生文件系统挂载**
+  - 对性能关键路径直接访问主机文件系统
+  - 可配置只读或读写模式
+  - 共享系统目录(`/bin`, `/usr`)或租户特定工作区
+  - 完美适用于 Python 虚拟环境、npm 模块和 ML 模型缓存
+
+- **☸️ Kubernetes 集成**
+  - 原生 CSI(容器存储接口)驱动
+  - 动态卷配置
+  - 基础设施级别的多租户隔离
+  - 支持快照和备份
+
+---
+
+## 🏗️ 架构设计
 
 ```
 ┌─────────────────────────────────────────────┐
-│         应用层 / AI Agent                    │
+│         应用程序 / AI Agent                  │
 └─────────────────┬───────────────────────────┘
                   │
 ┌─────────────────┴───────────────────────────┐
-│           FUSE Interface                     │
-│  (POSIX-compliant File Operations)          │
+│           FUSE 接口                          │
+│       (POSIX 文件操作)                       │
 └─────────────────┬───────────────────────────┘
                   │
 ┌─────────────────┴───────────────────────────┐
-│         Tarbox Core Engine                   │
+│         Tarbox 核心引擎                      │
 │  ┌──────────────────────────────────────┐   │
 │  │  文件系统层                           │   │
-│  │  - Inode 管理                        │   │
-│  │  - 目录树                            │   │
-│  │  - 权限控制                          │   │
+│  │  • Inode 管理                        │   │
+│  │  • 目录树                            │   │
+│  │  • 权限控制                          │   │
+│  │  • 原生挂载路由                      │   │
 │  └──────────────────────────────────────┘   │
 │  ┌──────────────────────────────────────┐   │
-│  │  审计层                              │   │
-│  │  - 操作日志                          │   │
-│  │  - 版本控制                          │   │
-│  │  - 访问追踪                          │   │
+│  │  分层文件系统                         │   │
+│  │  • 层管理(创建/切换)                 │   │
+│  │  • 写时复制(COW)                     │   │
+│  │  • 检查点和快照                      │   │
 │  └──────────────────────────────────────┘   │
 │  ┌──────────────────────────────────────┐   │
-│  │  分层文件系统管理                     │   │
-│  │  - Layer 管理（创建/切换/删除）      │   │
-│  │  - 写时复制（COW）                   │   │
-│  │  - 检查点（Checkpoint）              │   │
-│  │  - 层合并和分支                      │   │
+│  │  审计与缓存                          │   │
+│  │  • 操作日志                          │   │
+│  │  • 多级 LRU 缓存                     │   │
+│  │  • 版本追踪                          │   │
 │  └──────────────────────────────────────┘   │
 └─────────────────┬───────────────────────────┘
                   │
 ┌─────────────────┴───────────────────────────┐
-│        PostgreSQL Storage Backend            │
-│  - 元数据表 (Metadata Tables)               │
-│  - 数据块存储 (Data Blocks)                 │
-│  - 审计日志表 (Audit Logs)                  │
-│  - 层管理表 (Layer Tables)                  │
+│        PostgreSQL 存储后端                   │
+│  • 元数据表(inodes, layers)                 │
+│  • 数据块(二进制和文本)                     │
+│  • 审计日志(按时间分区)                     │
+│  • 原生挂载配置                             │
 └──────────────────────────────────────────────┘
 ```
 
-## 快速开始
+### 模块结构
+
+```
+src/
+├── types.rs        # 核心类型别名(InodeId, LayerId, TenantId)
+├── config/         # 配置系统(TOML + 环境变量)
+├── storage/        # PostgreSQL 层(所有数据库操作)
+├── fs/             # 文件系统核心(路径解析、文件操作)
+├── fuse/           # FUSE 接口(异步到同步桥接)
+├── layer/          # 分层文件系统(COW、检查点)
+├── native/         # 原生挂载管理
+├── audit/          # 审计日志(异步批量插入)
+├── cache/          # 缓存层(基于 moka 的 LRU)
+├── api/            # REST/gRPC API
+└── k8s/            # Kubernetes CSI 驱动
+```
+
+---
+
+## 🚀 快速开始
 
 ### 前置要求
 
-- Rust 1.92+ (Edition 2024)
-- PostgreSQL 14+
-- FUSE 库（Linux: libfuse3, macOS: macFUSE）
+- **Rust**: 1.92+ (Edition 2024)
+- **PostgreSQL**: 14+
+- **FUSE**: libfuse3 (Linux) 或 macFUSE (macOS)
 
 ### 安装
 
@@ -121,35 +158,177 @@ Tarbox 是一个高性能的文件系统实现，将 PostgreSQL 作为存储后�
 git clone https://github.com/yourusername/tarbox.git
 cd tarbox
 
-# 构建项目
+# 从源码构建
 cargo build --release
 
-# 安装
+# 安装(可选)
 cargo install --path .
 ```
 
-### 配置
+### 基础使用
 
-创建配置文件 `tarbox.toml`:
+```bash
+# 初始化数据库模式
+tarbox init --database-url postgresql://user:pass@localhost/tarbox
+
+# 为你的 AI Agent 创建租户
+tarbox tenant create myagent --name "My AI Agent"
+
+# 挂载文件系统
+sudo tarbox mount /mnt/tarbox --tenant myagent
+
+# 像使用普通文件系统一样使用
+echo "Hello, Tarbox!" > /mnt/tarbox/hello.txt
+cat /mnt/tarbox/hello.txt
+
+# 创建检查点(快照)
+echo "checkpoint" > /mnt/tarbox/.tarbox/layers/new
+
+# 进行一些修改
+echo "More data" >> /mnt/tarbox/hello.txt
+
+# 查看层历史
+cat /mnt/tarbox/.tarbox/layers/list
+
+# 切换到之前的层
+echo "<layer-id>" > /mnt/tarbox/.tarbox/layers/switch
+
+# 卸载
+sudo umount /mnt/tarbox
+```
+
+### CLI 命令
+
+```bash
+# 租户管理
+tarbox tenant create <name>           # 创建新租户
+tarbox tenant list                    # 列出所有租户
+tarbox tenant delete <name>           # 删除租户
+
+# 层操作
+tarbox layer list --tenant <name>     # 列出所有层
+tarbox layer create --tenant <name>   # 创建检查点
+tarbox layer switch --tenant <name> --layer <id>  # 切换层
+tarbox layer diff --layer1 <id1> --layer2 <id2>  # 比较层
+
+# 文件操作
+tarbox ls --tenant <name> <path>              # 列出目录
+tarbox cat --tenant <name> <path>             # 读取文件
+tarbox write --tenant <name> <path> <data>    # 写入文件
+tarbox diff --tenant <name> <path>            # 显示文件历史
+
+# 审计查询
+tarbox audit --tenant <name> --since "1 day ago"  # 最近操作
+tarbox audit --path <path> --operation write      # 特定文件写入
+```
+
+---
+
+## 📚 文档
+
+### 用户文档
+
+- **[快速开始指南](docs/quick-start.md)** - 5 分钟上手
+- **[配置参考](docs/configuration.md)** - 所有配置选项说明
+- **[CLI 参考](docs/cli-reference.md)** - 完整命令文档
+- **[Kubernetes 部署](docs/kubernetes.md)** - 使用 CSI 驱动部署
+
+### 开发者文档
+
+- **[架构概览](spec/00-overview.md)** - 系统设计和理念
+- **[数据库模式](spec/01-database-schema.md)** - PostgreSQL 表定义
+- **[FUSE 接口](spec/02-fuse-interface.md)** - POSIX 操作映射
+- **[分层文件系统](spec/04-layered-filesystem.md)** - COW 和版本控制
+- **[文本优化](spec/10-text-file-optimization.md)** - 行级差异
+- **[原生挂载](spec/12-native-mounting.md)** - 性能优化
+- **[贡献指南](CONTRIBUTING.md)** - 如何贡献
+- **[开发设置](CLAUDE.md)** - 内部开发指南
+
+### 任务进度
+
+在 [task/](task/) 目录中查看我们的开发路线图:
+
+- ✅ **任务 01**: 项目设置
+- ⏳ **任务 02**: 数据库层(MVP)
+- ⏳ **任务 03**: 文件系统核心(MVP)
+- ⏳ **任务 04**: CLI 工具(MVP)
+- 📅 **任务 05-08**: 高级功能(FUSE、层、审计)
+
+---
+
+## 💡 使用场景
+
+### AI Agent 工作空间
+
+```bash
+# 每个 AI Agent 获得隔离的租户
+tarbox tenant create agent-001
+
+# Agent 在分层环境中工作
+# 在危险操作前创建检查点
+echo "checkpoint" > /.tarbox/layers/new
+
+# Agent 修改文件
+# 如果出错,立即回滚
+echo "<previous-layer>" > /.tarbox/layers/switch
+```
+
+### 代码生成追踪
+
+```bash
+# 追踪代码生成工具所做的每个更改
+tarbox audit --operation write --since "1 hour ago"
+
+# 比较生成代码的前后状态
+tarbox layer diff --layer1 <before> --layer2 <after>
+
+# 查看文本文件的逐行更改
+tarbox diff /src/generated.py
+```
+
+### 多环境开发
+
+```bash
+# 通过原生挂载共享只读系统工具
+[[native_mounts]]
+path = "/usr/bin"
+source = "/usr/bin"
+mode = "ro"
+shared = true
+
+# 租户特定的 Python 虚拟环境
+[[native_mounts]]
+path = "/.venv"
+source = "/var/tarbox/venvs/{tenant_id}"
+mode = "rw"
+shared = false
+```
+
+---
+
+## 🔧 配置
+
+示例 `config.toml`:
 
 ```toml
 [database]
-host = "localhost"
-port = 5432
-database = "tarbox"
-user = "tarbox_user"
-password = "your_password"
+url = "postgresql://tarbox:password@localhost/tarbox"
 pool_size = 20
+connection_timeout = "30s"
 
 [filesystem]
-mount_point = "/mnt/tarbox"
 block_size = 4096
 max_file_size = "10GB"
 
+[cache]
+metadata_size = "1GB"
+block_size = "4GB"
+policy = "lru"
+
 [audit]
 enabled = true
-log_level = "info"
 retention_days = 90
+batch_size = 100
 
 [layer]
 auto_checkpoint = false
@@ -161,206 +340,199 @@ path = "/bin"
 source = "/bin"
 mode = "ro"
 shared = true
-
-[[native_mounts]]
-path = "/usr"
-source = "/usr"
-mode = "ro"
-shared = true
+priority = 10
 
 [[native_mounts]]
 path = "/.venv"
 source = "/var/tarbox/venvs/{tenant_id}"
 mode = "rw"
 shared = false
+priority = 20
 ```
 
-### 运行
+---
+
+## 🧪 开发
+
+### 构建和测试
 
 ```bash
-# 初始化数据库
-tarbox init --config tarbox.toml
+# 构建项目
+cargo build
 
-# 挂载文件系统
-tarbox mount --config tarbox.toml
+# 运行所有测试
+cargo test
 
-# 卸载文件系统
-tarbox umount /mnt/tarbox
+# 运行特定测试
+cargo test test_name
+
+# 检查代码覆盖率(需要 tarpaulin)
+cargo tarpaulin --out Html
+
+# 格式化代码
+cargo fmt --all
+
+# 代码检查
+cargo clippy --all-targets --all-features -- -D warnings
+
+# 提交前检查(提交前运行)
+cargo fmt --all && \
+cargo clippy --all-targets --all-features -- -D warnings && \
+cargo test
 ```
 
-## Kubernetes 部署
+### 项目要求
 
-### 安装 CSI 驱动
+- **测试覆盖率**: 必须 >80% (项目全局要求)
+- **Rust Edition**: 2024
+- **代码风格**: 遵循 Linus Torvalds 和 John Carmack 原则
+  - 简单直接的代码
+  - 快速失败的错误处理(使用 `anyhow::Result`)
+  - 面向数据的设计
+  - 小而专注的函数
+
+### 依赖管理
 
 ```bash
-cargo build                                      # Build
-cargo test                                       # Test
-cargo fmt --all                                  # Format
-cargo clippy --all-targets --all-features -- -D warnings  # Lint
+# 添加新依赖(永远不要手动编辑 Cargo.toml)
+cargo add <crate>
+cargo add --dev <crate>  # 开发依赖
+
+# 安全审计
+cargo audit
+
+# 许可证和依赖检查
+cargo deny check
 ```
 
-### Project Structure
+---
+
+## 🤝 参与贡献
+
+我们欢迎贡献!详情请参阅我们的 [贡献指南](CONTRIBUTING.md)。
+
+### 如何贡献
+
+1. Fork 仓库
+2. 创建特性分支 (`git checkout -b feature/amazing-feature`)
+3. 进行修改
+4. 运行测试和检查 (`cargo test && cargo clippy`)
+5. 提交更改 (`git commit -m 'Add amazing feature'`)
+6. 推送到分支 (`git push origin feature/amazing-feature`)
+7. 打开 Pull Request
+
+### 开发交流
+
+- 在 GitHub Issues 上加入我们的讨论
+- 阅读 [行为准则](CODE_OF_CONDUCT.md)
+
+---
+
+## 📊 性能
+
+Tarbox 通过智能缓存设计实现高性能:
+
+- **元数据缓存**: 用于 inode 查找的 LRU 缓存
+- **块缓存**: 基于内容寻址的块缓存
+- **路径缓存**: 缓存的路径解析
+- **预编译语句**: 所有 PostgreSQL 查询使用预编译语句
+- **批量操作**: 审计日志异步批量写入
+- **原生挂载**: 对性能关键路径绕过 PostgreSQL
+
+基准测试结果(即将推出):
 
 ```
-tarbox/
-├── src/              # Source code
-├── spec/             # Architecture specifications
-├── task/             # Development tasks
-└── tests/            # Tests
+文件读取 (1MB):      ~50 MB/s
+文件写入 (1MB):      ~40 MB/s
+元数据操作:          ~5000 ops/s
+层切换:              <100ms
+文本差异:            ~1M lines/s
 ```
 
-## 性能优化
+---
 
-### 数据库优化
+## 🔒 安全性
 
-```sql
--- 为元数据表创建索引
-CREATE INDEX idx_inode_parent ON inodes(parent_id);
-CREATE INDEX idx_inode_name ON inodes(name);
-CREATE INDEX idx_blocks_inode ON blocks(inode_id);
+- **多租户隔离**: 租户之间完全数据分离
+- **审计日志**: 每个操作都被记录以符合合规要求
+- **权限模型**: 强制执行标准 UNIX 权限
+- **默认安全**: 系统目录使用只读原生挂载
 
--- 启用并行查询
-SET max_parallel_workers_per_gather = 4;
-```
+安全漏洞报告请参见 [SECURITY.md](SECURITY.md)。
 
-### 缓存配置
+---
 
-```toml
-[cache]
-metadata_cache_size = "1GB"
-block_cache_size = "4GB"
-cache_policy = "lru"
-```
+## 🗺️ 路线图
 
-## 审计和监控
+### MVP 阶段(当前)
 
-### 查询审计日志
+- [x] 使用 Rust 2024 edition 进行项目设置
+- [ ] 支持多租户的数据库层
+- [ ] 基本文件系统操作(POSIX)
+- [ ] 用于租户和文件管理的 CLI 工具
 
-```sql
--- 查看最近的文件操作
-SELECT * FROM audit_logs
-WHERE created_at > NOW() - INTERVAL '1 day'
-ORDER BY created_at DESC;
+### 阶段 2: 核心功能
 
--- 查看特定文件的访问历史
-SELECT * FROM audit_logs
-WHERE inode_id = 12345
-ORDER BY created_at DESC;
+- [ ] 带路径路由的 FUSE 接口
+- [ ] 支持 COW 的分层文件系统
+- [ ] 带时间分区的审计系统
+- [ ] 原生挂载支持
 
--- 查看文本文件的修改统计
-SELECT
-    path,
-    SUM((metadata->'text_changes'->>'lines_added')::int) as total_added,
-    SUM((metadata->'text_changes'->>'lines_deleted')::int) as total_deleted
-FROM audit_logs
-WHERE metadata->'text_changes'->>'is_text_file' = 'true'
-  AND created_at > NOW() - INTERVAL '7 days'
-GROUP BY path
-ORDER BY total_added + total_deleted DESC;
-```
+### 阶段 3: 高级功能
 
-### 文件历史和差异
+- [ ] 文本文件优化(行级差异)
+- [ ] 高级缓存策略
+- [ ] 权限系统增强
+- [ ] 符号链接和硬链接
 
-MIT OR Apache-2.0
+### 阶段 4: 云原生
 
-A PostgreSQL-based distributed filesystem designed for AI agents and cloud-native environments.
+- [ ] Kubernetes CSI 驱动
+- [ ] 用于管理的 REST API
+- [ ] 用于高性能的 gRPC API
+- [ ] 监控和指标(Prometheus)
 
-[中文文档](README_zh.md)
+### 阶段 5: 未来
 
-## Overview
+- [ ] 分布式 PostgreSQL 支持(Citus)
+- [ ] 实时复制
+- [ ] ML 模型版本控制助手
+- [ ] 管理 Web UI
 
-Tarbox is a high-performance filesystem implementation using PostgreSQL as the storage backend, providing reliable and auditable file storage for AI agents. It offers complete POSIX compatibility through a FUSE interface and supports Kubernetes Persistent Volume (PV) mounting.
+---
 
-## Core Features
+## 📜 许可证
 
-- **PostgreSQL Storage Backend**: ACID properties, distributed deployment, HA support
-- **POSIX Compatibility**: Standard file operations and permissions
-- **Filesystem Auditing**: Complete operation logging and version history
-- **Layered Filesystem**: Docker-like layers with Copy-on-Write
-- **FUSE Interface**: User-space implementation, no kernel module required
-- **Text File Optimization**: Git-like line-level diff storage
-- **Native Filesystem Mounting**: Direct host FS access for performance
-- **Kubernetes Integration**: CSI driver with dynamic provisioning
+本项目采用双重许可:
 
-## Quick Start
+- MIT 许可证 ([LICENSE-MIT](LICENSE) 或 http://opensource.org/licenses/MIT)
+- Apache 许可证 2.0 版本 ([LICENSE-APACHE](LICENSE) 或 http://www.apache.org/licenses/LICENSE-2.0)
 
-### Prerequisites
+您可以选择任一许可证使用。
 
-- Rust 1.92+ (Edition 2024)
-- PostgreSQL 14+
-- FUSE library (Linux: libfuse3, macOS: macFUSE)
+---
 
-### Installation
+## 🙏 致谢
 
-```bash
-git clone https://github.com/yourusername/tarbox.git
-cd tarbox
-cargo build --release
-```
+- **PostgreSQL 社区**: 提供强大的数据库系统
+- **FUSE 项目**: 提供用户空间文件系统能力
+- **Rust 社区**: 提供出色的生态系统
+- 灵感来自 Docker 的分层文件系统和 Git 的内容寻址
 
-### Basic Usage
+---
 
-```bash
-# Initialize database
-tarbox init
+## 📞 支持
 
-# Create tenant
-tarbox tenant create myagent
+- **文档**: [完整文档](docs/)
+- **问题**: [GitHub Issues](https://github.com/yourusername/tarbox/issues)
+- **讨论**: [GitHub Discussions](https://github.com/yourusername/tarbox/discussions)
 
-# Use filesystem
-tarbox --tenant myagent mkdir /data
-tarbox --tenant myagent write /data/test.txt "hello world"
-tarbox --tenant myagent cat /data/test.txt
-tarbox --tenant myagent ls /data
-```
+---
 
-## Development
+<div align="center">
 
-### Commands
+**[⬆ 返回顶部](#-tarbox)**
 
-```bash
-cargo build                                      # Build
-cargo test                                       # Test
-cargo fmt --all                                  # Format
-cargo clippy --all-targets --all-features -- -D warnings  # Lint
-```
+由 Tarbox 团队用 ❤️ 制作
 
-### Project Structure
-
-```
-tarbox/
-├── src/              # Source code
-├── spec/             # Architecture specifications
-├── task/             # Development tasks
-└── tests/            # Tests
-```
-
-## Roadmap
-
-### MVP Phase (Current)
-- [x] Project setup
-- [ ] Database layer (MVP)
-- [ ] Filesystem core (MVP)
-- [ ] CLI tool (MVP)
-
-### Advanced Features
-- [ ] FUSE interface
-- [ ] Layered filesystem
-- [ ] Audit system
-- [ ] Kubernetes CSI driver
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines and [CLAUDE.md](CLAUDE.md) for development details.
-
-### Coding Principles
-
-Following Linus Torvalds and John Carmack philosophies:
-- Simple and direct code
-- Fail fast error handling
-- Data-oriented design
-- Small, focused functions
-
-## License
-
-MIT OR Apache-2.0
+</div>
