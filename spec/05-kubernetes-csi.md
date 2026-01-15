@@ -261,6 +261,42 @@ parameters:
   
   # 命名空间
   namespace: "agent-001"
+  
+  # 原生挂载配置（TOML 格式）
+  nativeMounts: |
+    [[native_mounts]]
+    path = "/bin"
+    source = "/bin"
+    mode = "ro"
+    shared = true
+    
+    [[native_mounts]]
+    path = "/usr"
+    source = "/usr"
+    mode = "ro"
+    shared = true
+    
+    [[native_mounts]]
+    path = "/.venv"
+    source = "/var/tarbox/venvs/{tenant_id}"
+    mode = "rw"
+    shared = false
+```
+
+原生挂载处理：
+```
+CreateVolume 时：
+1. 解析 nativeMounts 参数（TOML 格式）
+2. 对于每个 [[native_mounts]] 条目：
+   - 如果 shared=false，插入 native_mounts 表（关联 tenant_id）
+   - 如果 shared=true，检查是否已存在全局挂载
+     - 不存在则创建全局挂载（tenant_id=NULL）
+     - 已存在则跳过
+3. 挂载时 FUSE 会自动加载这些配置
+
+DeleteVolume 时：
+1. 删除该租户的专属挂载（shared=false 且 tenant_id 匹配）
+2. 保留共享挂载（shared=true）
 ```
 
 #### DeleteVolume
@@ -459,6 +495,39 @@ parameters:
   autoCheckpoint: "true"        # 启用自动检查点
   checkpointInterval: "1h"      # 每小时创建检查点
 reclaimPolicy: Retain           # 保留数据
+allowVolumeExpansion: true
+```
+
+### 原生挂载 StorageClass
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: tarbox-native
+provisioner: tarbox.csi.io
+parameters:
+  databaseURL: "postgresql://..."
+  # 原生挂载配置（TOML 格式）
+  nativeMounts: |
+    [[native_mounts]]
+    path = "/bin"
+    source = "/bin"
+    mode = "ro"
+    shared = true
+    
+    [[native_mounts]]
+    path = "/usr"
+    source = "/usr"
+    mode = "ro"
+    shared = true
+    
+    [[native_mounts]]
+    path = "/.venv"
+    source = "/var/tarbox/venvs/{tenant_id}"
+    mode = "rw"
+    shared = false
+reclaimPolicy: Delete
 allowVolumeExpansion: true
 ```
 

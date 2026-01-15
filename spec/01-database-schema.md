@@ -188,6 +188,10 @@ CREATE TABLE audit_logs (
     -- 附加信息
     metadata JSONB,                          -- 额外的元数据
     
+    -- 原生挂载相关
+    is_native_mount BOOLEAN DEFAULT false,   -- 是否为原生挂载操作
+    native_source_path TEXT,                 -- 原生文件系统路径
+    
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     
     -- 分区键
@@ -345,7 +349,55 @@ COMMENT ON COLUMN text_line_map.line_number IS '逻辑行号（从 1 开始）';
 COMMENT ON COLUMN text_line_map.block_line_offset IS '在 TextBlock 内的行偏移（从 0 开始）';
 ```
 
-### 9. statistics 表（统计信息）
+### 9. native_mounts 表（原生文件系统挂载）
+
+```sql
+CREATE TABLE native_mounts (
+    mount_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    
+    -- 挂载路径（虚拟路径）
+    mount_path TEXT NOT NULL,
+    
+    -- 原生系统路径
+    source_path TEXT NOT NULL,
+    
+    -- 访问模式
+    mode VARCHAR(2) NOT NULL CHECK (mode IN ('ro', 'rw')),
+    
+    -- 是否跨租户共享
+    is_shared BOOLEAN NOT NULL DEFAULT false,
+    
+    -- 如果不是 shared，可以指定特定租户
+    tenant_id UUID REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+    
+    -- 启用状态
+    enabled BOOLEAN NOT NULL DEFAULT true,
+    
+    -- 优先级（用于路径匹配，数字越小优先级越高）
+    priority INTEGER NOT NULL DEFAULT 100,
+    
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    
+    -- 确保路径唯一性
+    UNIQUE(mount_path, tenant_id),
+    
+    -- 确保共享挂载没有 tenant_id
+    CHECK (NOT is_shared OR tenant_id IS NULL)
+);
+
+CREATE INDEX idx_native_mounts_path ON native_mounts(mount_path) WHERE enabled = true;
+CREATE INDEX idx_native_mounts_tenant ON native_mounts(tenant_id) WHERE enabled = true;
+CREATE INDEX idx_native_mounts_priority ON native_mounts(priority, mount_path);
+
+COMMENT ON TABLE native_mounts IS '原生文件系统挂载配置';
+COMMENT ON COLUMN native_mounts.mount_path IS '在 Tarbox 中的虚拟路径';
+COMMENT ON COLUMN native_mounts.source_path IS '宿主机的实际路径，支持变量 {tenant_id}';
+COMMENT ON COLUMN native_mounts.is_shared IS '是否跨租户共享（如系统目录）';
+COMMENT ON COLUMN native_mounts.priority IS '路径匹配优先级，越小越优先';
+```
+
+### 10. statistics 表（统计信息）
 
 ```sql
 CREATE TABLE statistics (

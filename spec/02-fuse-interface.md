@@ -87,6 +87,54 @@ tarbox mount \
 完全不同的文件，完全隔离
 ```
 
+## 路径解析与路由
+
+### 原生挂载检查
+
+在所有 FUSE 操作开始时，首先检查路径是否匹配原生挂载配置：
+
+```
+路径解析流程：
+1. 接收 FUSE 请求（带路径）
+2. 检查 native_mounts 配置
+   - 按 priority 排序
+   - 匹配路径前缀
+   - 检查租户权限
+3. 如果匹配原生挂载：
+   - 验证访问模式（ro/rw）
+   - 替换路径变量（{tenant_id}）
+   - 透传到原生文件系统
+4. 如果不匹配：
+   - 正常路径解析（PostgreSQL）
+   - 查询 inodes 表
+```
+
+**原生挂载优先级**：
+- 精确匹配 > 前缀匹配
+- 更长路径 > 较短路径
+- 更小 priority 值 > 更大 priority 值
+- 租户专属 > 共享挂载
+
+### 路径透传
+
+对于原生挂载的路径，操作直接转发到宿主机文件系统：
+
+```rust
+// 伪代码
+fn handle_fuse_operation(path: &str, op: Operation) -> Result<()> {
+    // 1. 检查原生挂载
+    if let Some(mount) = check_native_mount(path, tenant_id) {
+        validate_mount_access(mount, op)?;
+        let native_path = resolve_native_path(mount.source_path, tenant_id);
+        return forward_to_native_fs(native_path, op);
+    }
+    
+    // 2. 正常 Tarbox 处理
+    let inode = resolve_path(path, tenant_id)?;
+    handle_tarbox_operation(inode, op)
+}
+```
+
 ## FUSE 操作映射
 
 ### 元数据操作
@@ -99,9 +147,10 @@ tarbox mount \
 ```
 用途：ls, stat 等命令
 实现：
-1. 路径解析 -> inode_id
-2. 查询 inodes 表
-3. 返回 POSIX 属性
+1. 检查原生挂载（如匹配则透传）
+2. 路径解析 -> inode_id
+3. 查询 inodes 表
+4. 返回 POSIX 属性
 ```
 
 #### readdir - 读取目录

@@ -1,0 +1,20 @@
+[database]
+url = "postgres://postgres:postgres@localhost:5432/tarbox"
+max_connections = 10
+min_connections = 2
+
+[fuse]
+mount_point = "/mnt/tarbox"
+allow_other = false
+
+[audit]
+enabled = true
+retention_days = 90
+
+[cache]
+max_entries = 10000
+ttl_seconds = 300
+
+[api]
+rest_addr = "127.0.0.1:8080"
+grpc_addr = "127.0.0.1:50051"
