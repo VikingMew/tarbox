@@ -1,0 +1,34 @@
+# Git
+.git
+.gitignore
+.github
+
+# Build artifacts
+target/
+dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing
+.coverage
+*.profdata
+
+# Documentation
+*.md
+!README.md
+docs/
+spec/
+task/
+examples/
+
+# CI/CD
+.github/workflows/
+
+# Misc
+.DS_Store
+Thumbs.db

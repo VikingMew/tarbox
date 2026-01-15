@@ -67,14 +67,32 @@
     - 运行测试
     - Clippy 检查
     - 格式检查
+    - PostgreSQL 服务用于测试
   - `.github/workflows/release.yml` - 发布流程
-    - 构建 release 二进制
+    - 构建多架构 release 二进制
+      - Linux: x86_64-gnu (Intel/AMD), aarch64-gnu (ARM64), x86_64-musl (静态链接)
+      - macOS: aarch64-darwin (Apple Silicon)
     - 创建 GitHub release
+    - 上传打包后的二进制文件
   - `.github/workflows/docker.yml` - Docker 镜像构建
+    - 多架构镜像 (amd64, arm64)
+    - 推送到 GitHub Container Registry
+    - 标签策略：
+      - 分支推送: `20260115123456-abc1234` (timestamp-commitid)
+      - Tag 推送: `v1.2.3` (完整版本号，仅 v 开头的 tag)
+      - 无 latest 标签，无版本缩减
 
 - [x] 代码质量检查
   - 配置 `cargo deny` - 依赖检查
   - 配置 `cargo audit` - 安全漏洞检查
+
+- [x] Docker 配置
+  - `Dockerfile` - 多阶段构建
+    - 依赖缓存优化
+    - 最小化运行时镜像
+    - 非 root 用户运行
+    - 健康检查配置
+  - `.dockerignore` - 排除不必要的文件
 
 ### 1.4 开发工具配置
 
