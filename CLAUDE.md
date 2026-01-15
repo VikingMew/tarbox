@@ -210,7 +210,18 @@ Operations on native mounts:
 ## Project Structure
 
 - `spec/` - Architecture design (12 numbered specs: overview, database, FUSE, audit, layers, K8s, API, performance, hooks, multi-tenancy, text optimization, dependencies, native-mounting)
-- `task/` - Development tasks (5 tasks: setup, database, fs-core, FUSE, layers)
+- `task/` - Development tasks organized by priority
+  - **MVP tasks** (00-04): Minimal viable product
+    - 00: MVP roadmap
+    - 01: Project setup ✅
+    - 02: Database layer (MVP) - tenants, inodes, data_blocks only
+    - 03: Filesystem core (MVP) - basic POSIX ops, no permissions/caching
+    - 04: CLI tool (MVP) - tenant and file operations via command line
+  - **Advanced tasks** (05-08): Full features
+    - 05: FUSE interface
+    - 06: Database layer advanced (audit, layers, text optimization)
+    - 07: Filesystem core advanced (permissions, links, caching)
+    - 08: Layered filesystem (COW, checkpoints)
 - Task files track progress with checkboxes, dependencies, and acceptance criteria
 
 ## Important Constraints
