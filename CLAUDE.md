@@ -48,17 +48,18 @@ cargo deny check               # License/dependency check
 ```
 src/
 ├── types.rs        # Core type aliases (InodeId, LayerId, TenantId, BlockId)
-├── config/         # Config system (TOML files + env vars, native_mounts config)
+├── config/         # Config system (TOML files + env vars)
 ├── storage/        # PostgreSQL layer (all DB operations)
 ├── fs/             # Filesystem core (path resolution, file ops, permissions)
 ├── fuse/           # FUSE interface (bridges async to sync, path routing)
 ├── layer/          # Layered filesystem (COW, checkpoints, layer switching)
-├── native/         # Native mount management (path matching, passthrough)
 ├── audit/          # Audit logging (async batch insertion, partitioned tables)
 ├── cache/          # Caching layer (moka-based LRU)
 ├── api/            # REST/gRPC APIs
 └── k8s/            # Kubernetes CSI driver
 ```
+
+**Note**: Native directory mounting (originally planned in `native/` module) will be handled by **bubblewrap** at the container level instead of being implemented in Tarbox itself. This follows the single responsibility principle and reduces complexity.
 
 ### Key Design Patterns
 
@@ -81,27 +82,20 @@ src/
 - Writing commands triggers actions (e.g., create layer, switch layer)
 - Reading returns current state/results
 
-**Native Mounts**: Certain paths can be mounted to host native filesystem:
-- Configured in config.toml or native_mounts table
-- Supports ro (read-only) and rw (read-write) modes
-- Can be shared across tenants (e.g., /bin, /usr) or tenant-specific (e.g., /.venv)
-- Path variables: {tenant_id}, {mount_id}, {user}
-- Operations are passed through to native FS, bypassing PostgreSQL
+**Container Integration**: Use **bubblewrap** for mounting host directories:
+- System directories: `--ro-bind /usr /usr --ro-bind /bin /bin`
+- Tenant workspaces: `--bind /host/venvs/{tenant_id} /.venv`
+- Shared resources: `--ro-bind /data/models /models`
+- This approach is simpler and more performant than implementing mounting inside Tarbox
 
 ### Data Flow Examples
 
-**File Read (with Native Mount Check)**:
+**File Read**:
 1. FUSE read() receives path and tenant_id
-2. Check native_mounts config for path match
-3. If matched:
-   - Validate mode (must allow read)
-   - Resolve source path (replace {tenant_id})
-   - Pass through to native FS
-   - Log to audit_log with is_native_mount=true
-4. If not matched:
-   - Normal path resolution (PostgreSQL)
-   - Read from data_blocks or text_blocks
-   - Return data
+2. Normal path resolution (PostgreSQL)
+3. Read from data_blocks or text_blocks
+4. Return data
+5. Log to audit_log
 
 **File Write**:
 1. FUSE write() → check native mount first

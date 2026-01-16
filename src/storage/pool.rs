@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use sqlx::{Postgres, Transaction};
 use std::time::Duration;
@@ -19,8 +19,7 @@ impl DatabasePool {
             .min_connections(config.min_connections)
             .acquire_timeout(Duration::from_secs(30))
             .connect(&config.url)
-            .await
-            .context("Failed to create database pool")?;
+            .await?;
 
         tracing::info!(
             "Database pool created with max_connections={}, min_connections={}",
@@ -36,26 +35,17 @@ impl DatabasePool {
     }
 
     pub async fn health_check(&self) -> Result<()> {
-        sqlx::query("SELECT 1")
-            .fetch_one(&self.pool)
-            .await
-            .context("Database health check failed")?;
+        sqlx::query("SELECT 1").fetch_one(&self.pool).await?;
         Ok(())
     }
 
     pub async fn check_version(&self) -> Result<String> {
-        let row: (String,) = sqlx::query_as("SELECT version()")
-            .fetch_one(&self.pool)
-            .await
-            .context("Failed to get PostgreSQL version")?;
+        let row: (String,) = sqlx::query_as("SELECT version()").fetch_one(&self.pool).await?;
         Ok(row.0)
     }
 
     pub async fn run_migrations(&self) -> Result<()> {
-        sqlx::migrate!("./migrations")
-            .run(&self.pool)
-            .await
-            .context("Failed to run database migrations")?;
+        sqlx::migrate!("./migrations").run(&self.pool).await?;
         tracing::info!("Database migrations completed successfully");
         Ok(())
     }
@@ -66,7 +56,7 @@ impl DatabasePool {
     }
 
     pub async fn begin_transaction(&self) -> Result<DatabaseTransaction<'_>> {
-        let tx = self.pool.begin().await.context("Failed to begin transaction")?;
+        let tx = self.pool.begin().await?;
         Ok(tx)
     }
 }

@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::Utc;
 use sqlx::PgPool;
 
@@ -32,8 +32,7 @@ impl<'a> InodeOperations<'a> {
         .bind(input.uid)
         .bind(input.gid)
         .fetch_one(self.pool)
-        .await
-        .context("Failed to create inode")?;
+        .await?;
 
         tracing::debug!(
             tenant_id = %inode.tenant_id,
@@ -58,8 +57,7 @@ impl<'a> InodeOperations<'a> {
         .bind(tenant_id)
         .bind(inode_id)
         .fetch_optional(self.pool)
-        .await
-        .context("Failed to get inode")?;
+        .await?;
 
         Ok(inode)
     }
@@ -82,8 +80,7 @@ impl<'a> InodeOperations<'a> {
         .bind(parent_id)
         .bind(name)
         .fetch_optional(self.pool)
-        .await
-        .context("Failed to get inode by parent and name")?;
+        .await?;
 
         Ok(inode)
     }
@@ -162,7 +159,7 @@ impl<'a> InodeOperations<'a> {
             q = q.bind(now);
         }
 
-        let inode = q.fetch_one(self.pool).await.context("Failed to update inode")?;
+        let inode = q.fetch_one(self.pool).await?;
 
         tracing::debug!(
             tenant_id = %tenant_id,
@@ -178,8 +175,7 @@ impl<'a> InodeOperations<'a> {
             .bind(tenant_id)
             .bind(inode_id)
             .execute(self.pool)
-            .await
-            .context("Failed to delete inode")?;
+            .await?;
 
         let deleted = result.rows_affected() > 0;
 
@@ -207,8 +203,7 @@ impl<'a> InodeOperations<'a> {
         .bind(tenant_id)
         .bind(parent_id)
         .fetch_all(self.pool)
-        .await
-        .context("Failed to list children")?;
+        .await?;
 
         Ok(children)
     }

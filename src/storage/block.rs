@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -36,7 +36,7 @@ impl<'a> BlockOperations<'a> {
         .bind(&content_hash)
         .fetch_one(self.pool)
         .await
-        .context("Failed to create data block")?;
+        ?;
 
         tracing::debug!(
             tenant_id = %block.tenant_id,
@@ -67,8 +67,7 @@ impl<'a> BlockOperations<'a> {
         .bind(inode_id)
         .bind(block_index)
         .fetch_optional(self.pool)
-        .await
-        .context("Failed to get data block")?;
+        .await?;
 
         Ok(block)
     }
@@ -83,8 +82,7 @@ impl<'a> BlockOperations<'a> {
         )
         .bind(block_id)
         .fetch_optional(self.pool)
-        .await
-        .context("Failed to get data block by id")?;
+        .await?;
 
         Ok(block)
     }
@@ -101,8 +99,7 @@ impl<'a> BlockOperations<'a> {
         .bind(tenant_id)
         .bind(inode_id)
         .fetch_all(self.pool)
-        .await
-        .context("Failed to list data blocks")?;
+        .await?;
 
         Ok(blocks)
     }
@@ -112,8 +109,7 @@ impl<'a> BlockOperations<'a> {
             .bind(tenant_id)
             .bind(inode_id)
             .execute(self.pool)
-            .await
-            .context("Failed to delete data blocks")?;
+            .await?;
 
         let count = result.rows_affected();
 
@@ -142,8 +138,7 @@ impl<'a> BlockOperations<'a> {
         .bind(inode_id)
         .bind(block_index)
         .execute(self.pool)
-        .await
-        .context("Failed to delete data block")?;
+        .await?;
 
         Ok(result.rows_affected() > 0)
     }

@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -24,7 +24,7 @@ impl<'a> TenantRepository for TenantOperations<'a> {
         let tenant_id = Uuid::new_v4();
         const ROOT_INODE_ID: InodeId = 1;
 
-        let mut tx = self.pool.begin().await.context("Failed to begin transaction")?;
+        let mut tx = self.pool.begin().await?;
 
         let tenant = sqlx::query_as::<_, Tenant>(
             r#"
@@ -38,7 +38,7 @@ impl<'a> TenantRepository for TenantOperations<'a> {
         .bind(ROOT_INODE_ID)
         .fetch_one(&mut *tx)
         .await
-        .context("Failed to insert tenant")?;
+        ?;
 
         sqlx::query(
             r#"
@@ -56,15 +56,15 @@ impl<'a> TenantRepository for TenantOperations<'a> {
         .bind(4096_i64)
         .execute(&mut *tx)
         .await
-        .context("Failed to create root inode")?;
+        ?;
 
         sqlx::query("SELECT setval(pg_get_serial_sequence('inodes', 'inode_id'), $1, true)")
             .bind(ROOT_INODE_ID)
             .execute(&mut *tx)
             .await
-            .context("Failed to set inode_id sequence")?;
+            ?;
 
-        tx.commit().await.context("Failed to commit transaction")?;
+        tx.commit().await?;
 
         tracing::info!(
             tenant_id = %tenant.tenant_id,
@@ -86,7 +86,7 @@ impl<'a> TenantRepository for TenantOperations<'a> {
         .bind(tenant_id)
         .fetch_optional(self.pool)
         .await
-        .context("Failed to query tenant by id")?;
+        ?;
 
         Ok(tenant)
     }
@@ -102,7 +102,7 @@ impl<'a> TenantRepository for TenantOperations<'a> {
         .bind(tenant_name)
         .fetch_optional(self.pool)
         .await
-        .context("Failed to query tenant by name")?;
+        ?;
 
         Ok(tenant)
     }
@@ -117,7 +117,7 @@ impl<'a> TenantRepository for TenantOperations<'a> {
         )
         .fetch_all(self.pool)
         .await
-        .context("Failed to list tenants")?;
+        ?;
 
         Ok(tenants)
     }
@@ -127,7 +127,7 @@ impl<'a> TenantRepository for TenantOperations<'a> {
             .bind(tenant_id)
             .execute(self.pool)
             .await
-            .context("Failed to delete tenant")?;
+            ?;
 
         let deleted = result.rows_affected() > 0;
 
