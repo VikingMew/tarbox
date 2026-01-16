@@ -18,43 +18,61 @@
 
 ## 📖 Overview
 
-Tarbox is a high-performance filesystem implementation using PostgreSQL as the storage backend, specifically designed for AI agents that require reliable, auditable, and version-controlled file storage. It provides complete POSIX compatibility through a FUSE interface while offering unique features like Docker-style layering, Git-like text diffs, and Kubernetes integration.
+Tarbox is a high-performance filesystem implementation using PostgreSQL as the storage backend, specifically designed for AI agents that require reliable, auditable, and version-controlled file storage.
+
+**⚠️ Current Status: MVP Development Phase**
+
+Tarbox is under active development. The core storage layer and CLI tools are functional, while advanced features like FUSE mounting, layering, and Kubernetes integration are planned for future releases.
 
 ### Why Tarbox?
 
-Traditional filesystems lack the auditability, versioning, and multi-tenancy features that modern AI agents need. Tarbox bridges this gap by combining:
+Traditional filesystems lack the auditability, versioning, and multi-tenancy features that modern AI agents need. Tarbox aims to bridge this gap by combining:
 
 - **Database Reliability**: PostgreSQL's ACID properties ensure data consistency
-- **Version Control**: Docker-like layers with Git-style text file optimization
+- **Version Control**: (Planned) Docker-like layers with Git-style text file optimization
 - **Multi-Tenancy**: Complete isolation between different AI agents
-- **Cloud Native**: Built-in Kubernetes CSI driver for seamless deployment
-- **Auditability**: Every file operation is logged for compliance and debugging
+- **Cloud Native**: (Planned) Built-in Kubernetes CSI driver for seamless deployment
+- **Auditability**: (Planned) Every file operation logged for compliance and debugging
 
 ---
 
 ## ✨ Features
 
-### Core Capabilities
+### ✅ Implemented (MVP)
 
 - **🐘 PostgreSQL Storage Backend**
   - ACID guarantees for data consistency
-  - Distributed deployment with high availability
-  - Metadata-data separation for optimal performance
-  - Content-addressed storage with deduplication
+  - Multi-tenant data isolation
+  - Metadata and data block storage
+  - Content-addressed storage with BLAKE3 hashing
 
-- **📁 POSIX Compatibility**
-  - Standard file operations (read, write, open, mkdir, etc.)
-  - Full permission and attribute management
+- **📁 Basic File Operations**
+  - Directory operations (create, list, remove)
+  - File operations (create, read, write, delete)
+  - Path resolution and validation
+  - Metadata operations (stat, chmod, chown)
+
+- **🔧 CLI Tool**
+  - Tenant management (create, list, delete, info)
+  - File system operations (mkdir, ls, rm, cat, write)
+  - Database initialization
+  - Configurable via environment variables
+
+### 🚧 Planned Features
+
+- **📁 Full POSIX Compatibility** (Task 05)
+  - FUSE interface for seamless mounting
   - Symbolic and hard links support
-  - Seamless integration with existing tools
+  - Extended attributes
+  - File locking
 
-- **🔍 Complete Audit Trail**
+- **🔍 Complete Audit Trail** (Task 06)
   - Every file operation logged with metadata
   - Time-partitioned audit tables for efficient queries
   - Version history tracking for all changes
   - Compliance reporting support
 
-- **🐳 Docker-Style Layered Filesystem**
+- **🐳 Docker-Style Layered Filesystem** (Task 08)
   - Create checkpoints and snapshots instantly
   - Copy-on-Write (COW) for efficient storage
   - Linear history model with fast layer switching
@@ -77,6 +95,12 @@ Traditional filesystems lack the auditability, versioning, and multi-tenancy fea
   - Dynamic volume provisioning
   - Multi-tenant isolation at the infrastructure level
   - Snapshot and backup support
+
+- **🌐 WASI Support**
+  - WebAssembly System Interface compatibility
+  - Run in edge computing environments
+  - Browser-based file system
+  - Serverless function integration
 
 ---
 
@@ -105,23 +129,6 @@ graph TB
     style FUSE fill:#fff3e0
     style Core fill:#f3e5f5
     style DB fill:#e8f5e9
-```
-
-### Module Structure
-
-```
-src/
-├── types.rs        # Core type aliases (InodeId, LayerId, TenantId)
-├── config/         # Configuration system (TOML + environment)
-├── storage/        # PostgreSQL layer (all DB operations)
-├── fs/             # Filesystem core (path resolution, file ops)
-├── fuse/           # FUSE interface (async-to-sync bridge)
-├── layer/          # Layered filesystem (COW, checkpoints)
-├── native/         # Native mount management
-├── audit/          # Audit logging (async batch insertion)
-├── cache/          # Caching layer (moka-based LRU)
-├── api/            # REST/gRPC APIs
-└── k8s/            # Kubernetes CSI driver
 ```
 
 ---
@@ -170,61 +177,84 @@ cargo build --release
 cargo install --path .
 ```
 
-### Basic Usage
+### Basic Usage (Current MVP)
 
 ```bash
 # Initialize database schema
-tarbox init --database-url postgresql://user:pass@localhost/tarbox
+tarbox init
 
 # Create a tenant for your AI agent
-tarbox tenant create myagent --name "My AI Agent"
+tarbox tenant create myagent
 
-# Mount the filesystem
-sudo tarbox mount /mnt/tarbox --tenant myagent
+# Create directory structure
+tarbox --tenant myagent mkdir /data
+tarbox --tenant myagent mkdir /data/logs
 
-# Use it like a regular filesystem
-echo "Hello, Tarbox!" > /mnt/tarbox/hello.txt
-cat /mnt/tarbox/hello.txt
+# List directories
+tarbox --tenant myagent ls /
+tarbox --tenant myagent ls /data
 
-# Create a checkpoint (snapshot)
-echo "checkpoint" > /mnt/tarbox/.tarbox/layers/new
+# Create and write files
+tarbox --tenant myagent touch /data/config.txt
+tarbox --tenant myagent write /data/config.txt "key=value"
 
-# Make some changes
-echo "More data" >> /mnt/tarbox/hello.txt
+# Read file content
+tarbox --tenant myagent cat /data/config.txt
 
-# View layer history
-cat /mnt/tarbox/.tarbox/layers/list
+# View file information
+tarbox --tenant myagent stat /data/config.txt
 
-# Switch to previous layer
-echo "<layer-id>" > /mnt/tarbox/.tarbox/layers/switch
+# Delete files and directories
+tarbox --tenant myagent rm /data/config.txt
+tarbox --tenant myagent rmdir /data/logs
 
-# Unmount
-sudo umount /mnt/tarbox
+# Tenant management
+tarbox tenant list
+tarbox tenant info myagent
+tarbox tenant delete myagent
 ```
 
-### CLI Commands
+**Note**: FUSE mounting, layering, and other advanced features are not yet implemented. See [Roadmap](#-roadmap) for planned features.
+
+### CLI Commands (Currently Available)
 
 ```bash
+# Database initialization
+tarbox init                                    # Initialize database schema
+
 # Tenant management
-tarbox tenant create <name>           # Create a new tenant
-tarbox tenant list                    # List all tenants
-tarbox tenant delete <name>           # Delete a tenant
+tarbox tenant create <name>                    # Create a new tenant
+tarbox tenant info <name>                      # Show tenant information
+tarbox tenant list                             # List all tenants
+tarbox tenant delete <name>                    # Delete a tenant
 
-# Layer operations
-tarbox layer list --tenant <name>     # List all layers
-tarbox layer create --tenant <name>   # Create checkpoint
-tarbox layer switch --tenant <name> --layer <id>  # Switch layer
-tarbox layer diff --layer1 <id1> --layer2 <id2>  # Compare layers
+# File operations (require --tenant <name>)
+tarbox --tenant <name> mkdir <path>            # Create directory
+tarbox --tenant <name> ls [path]               # List directory (default: /)
+tarbox --tenant <name> rmdir <path>            # Remove empty directory
+tarbox --tenant <name> touch <path>            # Create empty file
+tarbox --tenant <name> write <path> <content>  # Write content to file
+tarbox --tenant <name> cat <path>              # Read file content
+tarbox --tenant <name> rm <path>               # Remove file
+tarbox --tenant <name> stat <path>             # Show file information
+```
 
-# File operations
-tarbox ls --tenant <name> <path>              # List directory
-tarbox cat --tenant <name> <path>             # Read file
-tarbox write --tenant <name> <path> <data>    # Write file
-tarbox diff --tenant <name> <path>            # Show file history
+**Planned Commands** (not yet implemented):
 
-# Audit queries
-tarbox audit --tenant <name> --since "1 day ago"  # Recent operations
-tarbox audit --path <path> --operation write      # Specific file writes
+```bash
+# Layer operations (Task 08 - Layered Filesystem)
+tarbox layer list --tenant <name>
+tarbox layer create --tenant <name>
+tarbox layer switch --tenant <name> --layer <id>
+tarbox layer diff --layer1 <id1> --layer2 <id2>
+
+# Audit queries (Task 06 - Audit System)
+tarbox audit --tenant <name> --since "1 day ago"
+tarbox audit --path <path> --operation write
+
+# FUSE mounting (Task 05 - FUSE Interface)
+tarbox mount <mountpoint> --tenant <name>
+tarbox umount <mountpoint>
 ```
 
 ---
@@ -253,23 +283,45 @@ tarbox audit --path <path> --operation write      # Specific file writes
 
 View our development roadmap in the [task/](task/) directory:
 
-- ✅ **Task 01**: Project setup
-- ⏳ **Task 02**: Database layer (MVP)
-- ⏳ **Task 03**: Filesystem core (MVP)
-- ⏳ **Task 04**: CLI tool (MVP)
-- 📅 **Task 05-08**: Advanced features (FUSE, layers, audit)
+- ✅ **Task 01**: Project setup and infrastructure
+- ✅ **Task 02**: Database layer (MVP) - PostgreSQL storage backend
+- ✅ **Task 03**: Filesystem core (MVP) - Basic file operations
+- ✅ **Task 04**: CLI tool (MVP) - Command-line interface
+- 📅 **Task 05**: FUSE interface - POSIX mounting
+- 📅 **Task 06**: Audit system - Operation logging
+- 📅 **Task 07**: Advanced filesystem - Permissions, links, caching
+- 📅 **Task 08**: Layered filesystem - COW, checkpoints, versioning
 
 ---
 
 ## 💡 Use Cases
 
-### AI Agent Workspace
+### ✅ Current: Multi-Tenant File Storage
 
 ```bash
 # Each AI agent gets an isolated tenant
 tarbox tenant create agent-001
+tarbox tenant create agent-002
 
-# Agent works in a layered environment
+# Agents have completely isolated workspaces
+tarbox --tenant agent-001 mkdir /workspace
+tarbox --tenant agent-001 write /workspace/data.txt "Agent 1 data"
+
+tarbox --tenant agent-002 mkdir /workspace
+tarbox --tenant agent-002 write /workspace/data.txt "Agent 2 data"
+
+# Data is completely isolated - no cross-contamination
+tarbox --tenant agent-001 cat /workspace/data.txt  # Output: Agent 1 data
+tarbox --tenant agent-002 cat /workspace/data.txt  # Output: Agent 2 data
+```
+
+### 🚧 Planned: AI Agent Workspace with Layers
+
+```bash
+# Each AI agent gets an isolated tenant (✅ implemented)
+tarbox tenant create agent-001
+
+# Agent works in a layered environment (🚧 planned)
 # Checkpoint before risky operations
 echo "checkpoint" > /.tarbox/layers/new
 
@@ -278,7 +330,7 @@ echo "checkpoint" > /.tarbox/layers/new
 echo "<previous-layer>" > /.tarbox/layers/switch
 ```
 
-### Code Generation Tracking
+### 🚧 Planned: Code Generation Tracking
 
 ```bash
 # Track every change made by code generation tools
@@ -291,7 +343,7 @@ tarbox layer diff --layer1 <before> --layer2 <after>
 tarbox diff /src/generated.py
 ```
 
-### Multi-Environment Development
+### 🚧 Planned: Multi-Environment Development
 
 ```bash
 # Shared read-only system tools via native mounts
