@@ -82,46 +82,29 @@ Traditional filesystems lack the auditability, versioning, and multi-tenancy fea
 
 ## 🏗️ Architecture
 
-```
-┌─────────────────────────────────────────────┐
-│         Applications / AI Agents             │
-└─────────────────┬───────────────────────────┘
-                  │
-┌─────────────────┴───────────────────────────┐
-│           FUSE Interface                     │
-│       (POSIX File Operations)                │
-└─────────────────┬───────────────────────────┘
-                  │
-┌─────────────────┴───────────────────────────┐
-│         Tarbox Core Engine                   │
-│  ┌──────────────────────────────────────┐   │
-│  │  Filesystem Layer                     │   │
-│  │  • Inode management                   │   │
-│  │  • Directory tree                     │   │
-│  │  • Permission control                 │   │
-│  │  • Native mount routing               │   │
-│  └──────────────────────────────────────┘   │
-│  ┌──────────────────────────────────────┐   │
-│  │  Layered Filesystem                   │   │
-│  │  • Layer management (create/switch)   │   │
-│  │  • Copy-on-Write (COW)                │   │
-│  │  • Checkpoints and snapshots          │   │
-│  └──────────────────────────────────────┘   │
-│  ┌──────────────────────────────────────┐   │
-│  │  Audit & Caching                      │   │
-│  │  • Operation logging                  │   │
-│  │  • Multi-level LRU cache              │   │
-│  │  • Version tracking                   │   │
-│  └──────────────────────────────────────┘   │
-└─────────────────┬───────────────────────────┘
-                  │
-┌─────────────────┴───────────────────────────┐
-│        PostgreSQL Storage Backend            │
-│  • Metadata tables (inodes, layers)         │
-│  • Data blocks (binary & text)              │
-│  • Audit logs (time-partitioned)            │
-│  • Native mount configuration               │
-└──────────────────────────────────────────────┘
+```mermaid
+graph TB
+    Apps[Applications / AI Agents]
+    FUSE[FUSE Interface<br/>POSIX File Operations]
+    
+    subgraph Core[Tarbox Core Engine]
+        FS[Filesystem Layer<br/>• Inode management<br/>• Directory tree<br/>• Permission control<br/>• Native mount routing]
+        Layer[Layered Filesystem<br/>• Layer management<br/>• Copy-on-Write COW<br/>• Checkpoints & snapshots]
+        Audit[Audit & Caching<br/>• Operation logging<br/>• Multi-level LRU cache<br/>• Version tracking]
+    end
+    
+    DB[(PostgreSQL Storage Backend<br/>• Metadata tables inodes, layers<br/>• Data blocks binary & text<br/>• Audit logs time-partitioned<br/>• Native mount configuration)]
+    
+    Apps --> FUSE
+    FUSE --> Core
+    FS --> DB
+    Layer --> DB
+    Audit --> DB
+    
+    style Apps fill:#e1f5ff
+    style FUSE fill:#fff3e0
+    style Core fill:#f3e5f5
+    style DB fill:#e8f5e9
 ```
 
 ### Module Structure
@@ -157,7 +140,7 @@ src/
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/tarbox.git
+git clone https://github.com/vikingmew/tarbox.git
 cd tarbox
 
 # Start PostgreSQL database
@@ -177,7 +160,7 @@ See [Docker Compose Guide](docs/docker-compose.md) for detailed usage.
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/tarbox.git
+git clone https://github.com/vikingmew/tarbox.git
 cd tarbox
 
 # Build from source
@@ -546,8 +529,8 @@ You may choose either license for your use.
 ## 📞 Support
 
 - **Documentation**: [Full docs](docs/)
-- **Issues**: [GitHub Issues](https://github.com/yourusername/tarbox/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/tarbox/discussions)
+- **Issues**: [GitHub Issues](https://github.com/vikingmew/tarbox/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/vikingmew/tarbox/discussions)
 
 ---
 
