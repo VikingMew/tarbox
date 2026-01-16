@@ -31,6 +31,7 @@
 - **06-api-design.md** - REST/gRPC API
 - **07-performance.md** - 性能优化策略
 - **10-text-file-optimization.md** - 文本文件优化（行级 diff）
+- **13-wasi-interface.md** - WASI 接口支持（WebAssembly）
 
 ### P3 - 可选优化（可延后或替代）
 
@@ -100,6 +101,11 @@ bwrap \
    - 05-kubernetes-csi.md（K8s 部署）
    - 07-performance.md（性能调优）
    - 03-audit-system.md（审计和合规）
+
+4. **云原生/边缘计算**：
+   - 13-wasi-interface.md（WebAssembly 部署）
+   - 06-api-design.md（API 集成）
+   - 05-kubernetes-csi.md（容器编排）
 
 ## 文档维护
 

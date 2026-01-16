@@ -37,8 +37,7 @@ impl<'a> TenantRepository for TenantOperations<'a> {
         .bind(&input.tenant_name)
         .bind(ROOT_INODE_ID)
         .fetch_one(&mut *tx)
-        .await
-        ?;
+        .await?;
 
         sqlx::query(
             r#"
@@ -61,8 +60,7 @@ impl<'a> TenantRepository for TenantOperations<'a> {
         sqlx::query("SELECT setval(pg_get_serial_sequence('inodes', 'inode_id'), $1, true)")
             .bind(ROOT_INODE_ID)
             .execute(&mut *tx)
-            .await
-            ?;
+            .await?;
 
         tx.commit().await?;
 
@@ -85,8 +83,7 @@ impl<'a> TenantRepository for TenantOperations<'a> {
         )
         .bind(tenant_id)
         .fetch_optional(self.pool)
-        .await
-        ?;
+        .await?;
 
         Ok(tenant)
     }
@@ -101,8 +98,7 @@ impl<'a> TenantRepository for TenantOperations<'a> {
         )
         .bind(tenant_name)
         .fetch_optional(self.pool)
-        .await
-        ?;
+        .await?;
 
         Ok(tenant)
     }
@@ -116,8 +112,7 @@ impl<'a> TenantRepository for TenantOperations<'a> {
             "#,
         )
         .fetch_all(self.pool)
-        .await
-        ?;
+        .await?;
 
         Ok(tenants)
     }
@@ -126,8 +121,7 @@ impl<'a> TenantRepository for TenantOperations<'a> {
         let result = sqlx::query("DELETE FROM tenants WHERE tenant_id = $1")
             .bind(tenant_id)
             .execute(self.pool)
-            .await
-            ?;
+            .await?;
 
         let deleted = result.rows_affected() > 0;
 

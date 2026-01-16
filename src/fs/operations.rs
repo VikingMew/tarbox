@@ -60,8 +60,10 @@ impl<'a> FileSystem<'a> {
         }
 
         let inode_ops = InodeOperations::new(self.pool);
-        if let Some(_) =
-            inode_ops.get_by_parent_and_name(self.tenant_id, parent.inode_id, &dirname).await?
+        if inode_ops
+            .get_by_parent_and_name(self.tenant_id, parent.inode_id, &dirname)
+            .await?
+            .is_some()
         {
             return Err(FsError::AlreadyExists(path.to_string()));
         }
@@ -122,8 +124,10 @@ impl<'a> FileSystem<'a> {
         }
 
         let inode_ops = InodeOperations::new(self.pool);
-        if let Some(_) =
-            inode_ops.get_by_parent_and_name(self.tenant_id, parent.inode_id, &filename).await?
+        if inode_ops
+            .get_by_parent_and_name(self.tenant_id, parent.inode_id, &filename)
+            .await?
+            .is_some()
         {
             return Err(FsError::AlreadyExists(path.to_string()));
         }

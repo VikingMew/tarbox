@@ -2,7 +2,7 @@ use anyhow::Result;
 use tarbox::config::DatabaseConfig;
 use tarbox::storage::{
     BlockOperations, CreateBlockInput, CreateInodeInput, CreateTenantInput, DatabasePool,
-    InodeOperations, InodeType, TenantOperations, UpdateInodeInput,
+    InodeOperations, InodeType, TenantOperations, TenantRepository, UpdateInodeInput,
 };
 
 async fn setup_test_db() -> Result<DatabasePool> {

@@ -153,6 +153,28 @@ src/
 
 ### Installation
 
+#### Option 1: Using Docker Compose (Recommended for Development)
+
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/tarbox.git
+cd tarbox
+
+# Start PostgreSQL database
+docker-compose up -d postgres
+
+# Initialize database
+export DATABASE_URL=postgres://postgres:postgres@localhost:5432/tarbox
+cargo run -- init
+
+# Or use the CLI container
+docker-compose run --rm tarbox-cli tarbox init
+```
+
+See [Docker Compose Guide](docs/docker-compose.md) for detailed usage.
+
+#### Option 2: Build from Source
+
 ```bash
 # Clone the repository
 git clone https://github.com/yourusername/tarbox.git

@@ -86,7 +86,10 @@ mod tests {
 
     #[test]
     fn test_fs_result_ok() {
-        let result: FsResult<i32> = Ok(42);
+        fn get_value() -> FsResult<i32> {
+            Ok(42)
+        }
+        let result = get_value();
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 42);
     }

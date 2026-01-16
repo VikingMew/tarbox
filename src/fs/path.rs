@@ -12,8 +12,8 @@ pub fn normalize_path(path: &str) -> FsResult<String> {
         return Err(FsError::InvalidPath("Path contains NULL character".to_string()));
     }
 
-    if path.as_bytes().len() > MAX_PATH_LENGTH {
-        return Err(FsError::PathTooLong(path.as_bytes().len()));
+    if path.len() > MAX_PATH_LENGTH {
+        return Err(FsError::PathTooLong(path.len()));
     }
 
     if !path.starts_with('/') {
@@ -27,8 +27,8 @@ pub fn normalize_path(path: &str) -> FsResult<String> {
     let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
 
     for part in &parts {
-        if part.as_bytes().len() > MAX_FILENAME_LENGTH {
-            return Err(FsError::FilenameTooLong(part.as_bytes().len()));
+        if part.len() > MAX_FILENAME_LENGTH {
+            return Err(FsError::FilenameTooLong(part.len()));
         }
     }
 

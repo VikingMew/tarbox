@@ -1,0 +1,88 @@
+version: '3.8'
+
+services:
+  # PostgreSQL 数据库
+  postgres:
+    image: postgres:16-alpine
+    container_name: tarbox-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: tarbox
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - tarbox-network
+
+  # PostgreSQL 测试数据库（用于集成测试）
+  postgres-test:
+    image: postgres:16-alpine
+    container_name: tarbox-postgres-test
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: tarbox_test
+    ports:
+      - "5433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - tarbox-network
+
+  # Tarbox CLI（用于手动测试）
+  tarbox-cli:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tarbox-cli
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/tarbox
+      RUST_LOG: tarbox=debug,info
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - tarbox-network
+    volumes:
+      - ./:/workspace:ro
+    command: ["tail", "-f", "/dev/null"]  # 保持容器运行
+    stdin_open: true
+    tty: true
+
+  # pgAdmin（可选，用于数据库管理）
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: tarbox-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@tarbox.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_LISTEN_PORT: 80
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    networks:
+      - tarbox-network
+    profiles:
+      - tools  # 使用 --profile tools 启动
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  tarbox-network:
+    driver: bridge
