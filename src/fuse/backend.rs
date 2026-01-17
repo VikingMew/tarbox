@@ -17,7 +17,7 @@ impl TarboxBackend {
         Self { pool, tenant_id }
     }
 
-    fn fs(&self) -> FileSystem {
+    fn fs(&self) -> FileSystem<'_> {
         FileSystem::new(&self.pool, self.tenant_id)
     }
 
