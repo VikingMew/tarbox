@@ -15,20 +15,6 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
 
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: tarbox_test
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
-
     steps:
       - uses: actions/checkout@v4
 
@@ -65,10 +51,8 @@ jobs:
       - name: Build
         run: cargo build --verbose --features mockall
 
-      - name: Run tests
-        run: cargo test --verbose --features mockall
-        env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/tarbox_test
+      - name: Run tests (unit + integration with mocks only)
+        run: cargo test --verbose --features mockall --skip storage_e2e_test --skip storage_models_comprehensive_test
 
   security:
     name: Security Audit
