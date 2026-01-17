@@ -69,3 +69,128 @@ impl Default for Config {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_config_default_values() {
+        let config = Config::default();
+
+        assert_eq!(config.database.url, "postgres://postgres:postgres@localhost:5432/tarbox");
+        assert_eq!(config.database.max_connections, 10);
+        assert_eq!(config.database.min_connections, 2);
+
+        assert_eq!(config.fuse.mount_point, "/mnt/tarbox");
+        assert_eq!(config.fuse.allow_other, false);
+
+        assert_eq!(config.audit.enabled, true);
+        assert_eq!(config.audit.retention_days, 90);
+
+        assert_eq!(config.cache.max_entries, 10000);
+        assert_eq!(config.cache.ttl_seconds, 300);
+
+        assert_eq!(config.api.rest_addr, "127.0.0.1:8080");
+        assert_eq!(config.api.grpc_addr, "127.0.0.1:50051");
+    }
+
+    #[test]
+    fn test_config_clone() {
+        let config1 = Config::default();
+        let config2 = config1.clone();
+
+        assert_eq!(config1.database.url, config2.database.url);
+        assert_eq!(config1.fuse.mount_point, config2.fuse.mount_point);
+        assert_eq!(config1.audit.enabled, config2.audit.enabled);
+    }
+
+    #[test]
+    fn test_database_config_creation() {
+        let db_config = DatabaseConfig {
+            url: "postgres://user:pass@host:5432/db".to_string(),
+            max_connections: 20,
+            min_connections: 5,
+        };
+
+        assert_eq!(db_config.url, "postgres://user:pass@host:5432/db");
+        assert_eq!(db_config.max_connections, 20);
+        assert_eq!(db_config.min_connections, 5);
+    }
+
+    #[test]
+    fn test_fuse_config_allow_other_flag() {
+        let fuse_config = FuseConfig { mount_point: "/custom/path".to_string(), allow_other: true };
+
+        assert_eq!(fuse_config.mount_point, "/custom/path");
+        assert_eq!(fuse_config.allow_other, true);
+    }
+
+    #[test]
+    fn test_audit_config_disabled() {
+        let audit_config = AuditConfig { enabled: false, retention_days: 30 };
+
+        assert_eq!(audit_config.enabled, false);
+        assert_eq!(audit_config.retention_days, 30);
+    }
+
+    #[test]
+    fn test_cache_config_custom_values() {
+        let cache_config = CacheConfig { max_entries: 50000, ttl_seconds: 600 };
+
+        assert_eq!(cache_config.max_entries, 50000);
+        assert_eq!(cache_config.ttl_seconds, 600);
+    }
+
+    #[test]
+    fn test_api_config_different_addresses() {
+        let api_config =
+            ApiConfig { rest_addr: "0.0.0.0:80".to_string(), grpc_addr: "0.0.0.0:443".to_string() };
+
+        assert_eq!(api_config.rest_addr, "0.0.0.0:80");
+        assert_eq!(api_config.grpc_addr, "0.0.0.0:443");
+    }
+
+    #[test]
+    fn test_config_serialization() {
+        let config = Config::default();
+        let json = serde_json::to_string(&config);
+        assert!(json.is_ok());
+    }
+
+    #[test]
+    fn test_config_deserialization() {
+        let json = r#"{
+            "database": {
+                "url": "postgres://localhost/test",
+                "max_connections": 15,
+                "min_connections": 3
+            },
+            "fuse": {
+                "mount_point": "/test",
+                "allow_other": true
+            },
+            "audit": {
+                "enabled": false,
+                "retention_days": 60
+            },
+            "cache": {
+                "max_entries": 5000,
+                "ttl_seconds": 120
+            },
+            "api": {
+                "rest_addr": "localhost:8080",
+                "grpc_addr": "localhost:50051"
+            }
+        }"#;
+
+        let config: Result<Config, _> = serde_json::from_str(json);
+        assert!(config.is_ok());
+
+        let config = config.unwrap();
+        assert_eq!(config.database.max_connections, 15);
+        assert_eq!(config.fuse.allow_other, true);
+        assert_eq!(config.audit.enabled, false);
+        assert_eq!(config.cache.max_entries, 5000);
+    }
+}

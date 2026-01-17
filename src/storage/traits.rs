@@ -1,5 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
+#[cfg(any(test, feature = "mockall"))]
+use mockall::automock;
 
 use crate::types::{InodeId, TenantId};
 
@@ -8,6 +10,7 @@ use super::models::{
     UpdateInodeInput,
 };
 
+#[cfg_attr(any(test, feature = "mockall"), automock)]
 #[async_trait]
 pub trait TenantRepository: Send + Sync {
     async fn create(&self, input: CreateTenantInput) -> Result<Tenant>;
@@ -17,6 +20,7 @@ pub trait TenantRepository: Send + Sync {
     async fn delete(&self, tenant_id: TenantId) -> Result<bool>;
 }
 
+#[cfg_attr(any(test, feature = "mockall"), automock)]
 #[async_trait]
 pub trait InodeRepository: Send + Sync {
     async fn create(&self, input: CreateInodeInput) -> Result<Inode>;
@@ -37,6 +41,7 @@ pub trait InodeRepository: Send + Sync {
     async fn list_children(&self, tenant_id: TenantId, parent_id: InodeId) -> Result<Vec<Inode>>;
 }
 
+#[cfg_attr(any(test, feature = "mockall"), automock)]
 #[async_trait]
 pub trait BlockRepository: Send + Sync {
     async fn create(&self, input: CreateBlockInput) -> Result<DataBlock>;
