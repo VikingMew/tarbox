@@ -41,6 +41,9 @@ cargo deny check               # License/dependency check
 - Rust 1.92+ (Edition 2024)
 - PostgreSQL 14+
 - Test coverage must be > 80% (project-wide requirement)
+  - Unit tests (no external dependencies): target 55-60%
+  - Integration tests (with mocks): fill the gap to 80%+
+  - Use mockall for mocking database and external dependencies
 
 ## Architecture
 
@@ -217,6 +220,143 @@ Operations on native mounts:
     - 07: Filesystem core advanced (permissions, links, caching)
     - 08: Layered filesystem (COW, checkpoints)
 - Task files track progress with checkboxes, dependencies, and acceptance criteria
+
+## Testing Strategy
+
+### Coverage Requirements
+The project MUST maintain >80% test coverage using a layered testing approach:
+
+**Layer 1: Unit Tests (~55% coverage)**
+- Test pure functions and data structures without external dependencies
+- Located in: `src/**/*.rs` in `#[cfg(test)]` modules
+- Target modules:
+  - `fs/error.rs`, `fs/path.rs` (100% achievable)
+  - `storage/models.rs`, `storage/traits.rs` (100% achievable)
+  - `fuse/interface.rs`, `fuse/backend.rs` (partial coverage)
+  - `config/` modules (partial coverage)
+
+**Layer 2: Integration Tests with Mockall (~25-30% additional coverage)**
+- Use mockall to mock database and external dependencies
+- Located in: `tests/*_integration_test.rs`
+- Mock the following traits:
+  - `storage::traits::TenantRepository`
+  - `storage::traits::InodeRepository`
+  - `storage::traits::BlockRepository`
+  - Any trait with `#[automock]` annotation
+- Test business logic in:
+  - `fs/operations.rs` (file operations with mocked storage)
+  - `storage/inode.rs`, `storage/tenant.rs`, `storage/block.rs` (with mocked PgPool)
+  - Layer management logic
+  - Audit logging logic
+
+**Layer 3: E2E Tests with Real Database (optional, for CI/CD)**
+- Require PostgreSQL test database
+- Located in: `tests/*_e2e_test.rs`
+- Run with: `DATABASE_URL=postgres://... cargo test`
+
+### Mockall Usage Guidelines
+
+**1. Define Mockable Traits**
+All repository interfaces MUST be defined as traits in `storage/traits.rs`:
+```rust
+#[cfg_attr(test, automock)]
+#[async_trait]
+pub trait TenantRepository {
+    async fn create_tenant(&self, input: CreateTenantInput) -> Result<Tenant>;
+    async fn get_tenant(&self, tenant_id: Uuid) -> Result<Option<Tenant>>;
+    async fn list_tenants(&self) -> Result<Vec<Tenant>>;
+    async fn delete_tenant(&self, tenant_id: Uuid) -> Result<()>;
+}
+```
+
+**2. Integration Test Structure**
+Create integration tests that mock database operations:
+```rust
+// tests/filesystem_operations_integration_test.rs
+use mockall::predicate::*;
+use tarbox::storage::traits::{MockInodeRepository, MockBlockRepository};
+use tarbox::fs::operations::FileSystem;
+
+#[tokio::test]
+async fn test_create_file_with_mocked_storage() {
+    let mut mock_inode_repo = MockInodeRepository::new();
+    let mut mock_block_repo = MockBlockRepository::new();
+    
+    // Setup expectations
+    mock_inode_repo
+        .expect_create_inode()
+        .with(eq(tenant_id), always())
+        .times(1)
+        .returning(|_, input| Ok(Inode { /* ... */ }));
+    
+    // Test filesystem operations with mocks
+    let fs = FileSystem::with_repos(mock_inode_repo, mock_block_repo);
+    let result = fs.create_file("/test.txt").await;
+    
+    assert!(result.is_ok());
+}
+```
+
+**3. Test File Naming Convention**
+- Unit tests: embedded in source files as `mod tests`
+- Integration tests with mocks: `tests/<module>_integration_test.rs`
+  - `tests/storage_integration_test.rs` - storage layer with mocked DB
+  - `tests/filesystem_operations_integration_test.rs` - FS operations with mocked storage
+  - `tests/layer_management_integration_test.rs` - layer operations with mocks
+- E2E tests: `tests/<feature>_e2e_test.rs`
+  - `tests/storage_e2e_test.rs` - requires real PostgreSQL
+
+**4. Mock vs Real Database Decision Matrix**
+| Component | Test Type | Dependency |
+|-----------|-----------|------------|
+| `fs/error.rs`, `fs/path.rs` | Unit | None |
+| `storage/models.rs` | Unit | None |
+| `config/` | Unit | None |
+| `fs/operations.rs` | Integration | Mock storage traits |
+| `storage/inode.rs` | Integration | Mock PgPool or real DB |
+| `fuse/adapter.rs` | Integration | Mock FileSystem |
+| Full POSIX ops | E2E | Real PostgreSQL |
+
+**5. Running Tests**
+```bash
+# Unit tests only (fast, no dependencies)
+cargo test --lib
+
+# Unit + integration tests with mocks (fast, no DB required)
+cargo test
+
+# All tests including E2E (requires PostgreSQL)
+DATABASE_URL=postgres://user:pass@localhost/tarbox_test cargo test --all-targets
+
+# Coverage report (unit + integration with mocks)
+cargo llvm-cov --all-targets --html
+```
+
+**6. Mockall Best Practices**
+- Use `#[cfg_attr(test, automock)]` to generate mocks only in test builds
+- Define clear expectations with `.expect_method_name()`
+- Use `predicate::*` for flexible argument matching
+- Mock at trait boundaries, not implementation details
+- Keep mocks simple - don't mock what you can construct
+- Name mock variables clearly: `mock_tenant_repo`, `mock_inode_repo`
+
+**7. What NOT to Mock**
+- Simple data structures (Inode, Tenant, Block)
+- Pure functions (path normalization, hash computation)
+- Error types
+- Configuration structs
+
+### Test Organization
+
+```
+tests/
+├── config_and_storage_models_test.rs           # Unit tests for config and models
+├── storage_models_comprehensive_test.rs        # Comprehensive model tests
+├── storage_integration_test.rs                 # Storage with mocked DB traits
+├── filesystem_operations_integration_test.rs   # FS ops with mocked storage (TO CREATE)
+├── layer_management_integration_test.rs        # Layer ops with mocks (TO CREATE)
+└── storage_e2e_test.rs                         # E2E with real PostgreSQL (optional)
+```
 
 ## Important Constraints
 
