@@ -22,10 +22,30 @@ impl<'a> TenantOperations<'a> {
 impl<'a> TenantRepository for TenantOperations<'a> {
     async fn create(&self, input: CreateTenantInput) -> Result<Tenant> {
         let tenant_id = Uuid::new_v4();
-        const ROOT_INODE_ID: InodeId = 1;
 
         let mut tx = self.pool.begin().await?;
 
+        // Create root inode first (let BIGSERIAL generate the ID)
+        let root_inode = sqlx::query_as::<_, (InodeId,)>(
+            r#"
+            INSERT INTO inodes (tenant_id, parent_id, name, inode_type, mode, uid, gid, size)
+            VALUES ($1, NULL, $2, $3, $4, $5, $6, $7)
+            RETURNING inode_id
+            "#,
+        )
+        .bind(tenant_id)
+        .bind("/")
+        .bind("dir")
+        .bind(0o755_i32)
+        .bind(0_i32)
+        .bind(0_i32)
+        .bind(4096_i64)
+        .fetch_one(&mut *tx)
+        .await?;
+
+        let root_inode_id = root_inode.0;
+
+        // Create tenant with the actual root_inode_id
         let tenant = sqlx::query_as::<_, Tenant>(
             r#"
             INSERT INTO tenants (tenant_id, tenant_name, root_inode_id)
@@ -35,38 +55,16 @@ impl<'a> TenantRepository for TenantOperations<'a> {
         )
         .bind(tenant_id)
         .bind(&input.tenant_name)
-        .bind(ROOT_INODE_ID)
+        .bind(root_inode_id)
         .fetch_one(&mut *tx)
         .await?;
-
-        sqlx::query(
-            r#"
-            INSERT INTO inodes (inode_id, tenant_id, parent_id, name, inode_type, mode, uid, gid, size)
-            VALUES ($1, $2, NULL, $3, $4, $5, $6, $7, $8)
-            "#,
-        )
-        .bind(ROOT_INODE_ID)
-        .bind(tenant_id)
-        .bind("/")
-        .bind("dir")
-        .bind(0o755_i32)
-        .bind(0_i32)
-        .bind(0_i32)
-        .bind(4096_i64)
-        .execute(&mut *tx)
-        .await
-        ?;
-
-        sqlx::query("SELECT setval(pg_get_serial_sequence('inodes', 'inode_id'), $1, true)")
-            .bind(ROOT_INODE_ID)
-            .execute(&mut *tx)
-            .await?;
 
         tx.commit().await?;
 
         tracing::info!(
             tenant_id = %tenant.tenant_id,
             tenant_name = %tenant.tenant_name,
+            root_inode_id = root_inode_id,
             "Created new tenant with root inode"
         );
 

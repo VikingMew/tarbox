@@ -37,7 +37,7 @@ async fn test_tenant_crud() -> Result<()> {
     let tenant = tenant_ops.create(CreateTenantInput { tenant_name: tenant_name.clone() }).await?;
 
     assert_eq!(tenant.tenant_name, tenant_name);
-    assert_eq!(tenant.root_inode_id, 1);
+    assert!(tenant.root_inode_id > 0);
 
     let found: Option<_> = tenant_ops.get_by_id(tenant.tenant_id).await?;
     assert!(found.is_some());
@@ -67,7 +67,7 @@ async fn test_inode_crud() -> Result<()> {
 
     let tenant = tenant_ops.create(CreateTenantInput { tenant_name: tenant_name.clone() }).await?;
 
-    let root_inode: Option<_> = inode_ops.get(tenant.tenant_id, 1).await?;
+    let root_inode: Option<_> = inode_ops.get(tenant.tenant_id, tenant.root_inode_id).await?;
     assert!(root_inode.is_some());
     let root = root_inode.unwrap();
     assert_eq!(root.name, "/");
@@ -76,7 +76,7 @@ async fn test_inode_crud() -> Result<()> {
     let file_inode = inode_ops
         .create(CreateInodeInput {
             tenant_id: tenant.tenant_id,
-            parent_id: Some(1),
+            parent_id: Some(tenant.root_inode_id),
             name: "test.txt".to_string(),
             inode_type: InodeType::File,
             mode: 0o644,
@@ -87,10 +87,11 @@ async fn test_inode_crud() -> Result<()> {
 
     assert_eq!(file_inode.name, "test.txt");
     assert_eq!(file_inode.inode_type, InodeType::File);
-    assert_eq!(file_inode.parent_id, Some(1));
+    assert_eq!(file_inode.parent_id, Some(tenant.root_inode_id));
 
-    let found: Option<_> =
-        inode_ops.get_by_parent_and_name(tenant.tenant_id, 1, "test.txt").await?;
+    let found: Option<_> = inode_ops
+        .get_by_parent_and_name(tenant.tenant_id, tenant.root_inode_id, "test.txt")
+        .await?;
     assert!(found.is_some());
     assert_eq!(found.unwrap().inode_id, file_inode.inode_id);
 
@@ -111,7 +112,7 @@ async fn test_inode_crud() -> Result<()> {
         .await?;
     assert_eq!(updated.size, 1024);
 
-    let children: Vec<_> = inode_ops.list_children(tenant.tenant_id, 1).await?;
+    let children: Vec<_> = inode_ops.list_children(tenant.tenant_id, tenant.root_inode_id).await?;
     assert_eq!(children.len(), 1);
     assert_eq!(children[0].name, "test.txt");
 
@@ -138,7 +139,7 @@ async fn test_data_block_crud() -> Result<()> {
     let file_inode = inode_ops
         .create(CreateInodeInput {
             tenant_id: tenant.tenant_id,
-            parent_id: Some(1),
+            parent_id: Some(tenant.root_inode_id),
             name: "data.bin".to_string(),
             inode_type: InodeType::File,
             mode: 0o644,
@@ -265,7 +266,7 @@ async fn test_content_hash_deduplication() -> Result<()> {
     let file1 = inode_ops
         .create(CreateInodeInput {
             tenant_id: tenant.tenant_id,
-            parent_id: Some(1),
+            parent_id: Some(tenant.root_inode_id),
             name: "file1.txt".to_string(),
             inode_type: InodeType::File,
             mode: 0o644,
@@ -277,7 +278,7 @@ async fn test_content_hash_deduplication() -> Result<()> {
     let file2 = inode_ops
         .create(CreateInodeInput {
             tenant_id: tenant.tenant_id,
-            parent_id: Some(1),
+            parent_id: Some(tenant.root_inode_id),
             name: "file2.txt".to_string(),
             inode_type: InodeType::File,
             mode: 0o644,
