@@ -1,8 +1,39 @@
-# Kubernetes CSI 驱动设计
+# Spec 05: Kubernetes CSI 驱动设计
+
+**优先级**: P2 (高级功能)  
+**状态**: 设计阶段  
+**依赖**: spec/14 (文件系统接口抽象层), spec/02 (FUSE 接口)  
+**基于**: [spec/14-filesystem-interface.md](14-filesystem-interface.md)
 
 ## 概述
 
 CSI（Container Storage Interface）是 Kubernetes 的标准存储接口。Tarbox 通过实现 CSI 驱动，使得可以在 Kubernetes 中作为持久卷使用。
+
+**本规范描述 CSI 适配器的具体实现细节**，包括 CSI gRPC 接口实现、Volume 生命周期管理、Kubernetes 集成等。底层的文件系统操作通过 spec/14 定义的 `FilesystemInterface` 实现。
+
+## 架构定位
+
+```
+Kubernetes API Server
+    ↓
+CSI Controller (gRPC)
+    ↓
+┌─────────────────────────────────┐
+│  CsiAdapter (本规范)            │  ← 协议适配层
+│  - CSI gRPC 实现               │
+│  - Volume 生命周期管理          │
+│  - 租户自动创建                 │
+└─────────────────────────────────┘
+    ↓ 实现 FilesystemInterface trait
+┌─────────────────────────────────┐
+│  FilesystemInterface (spec/14)  │  ← 统一抽象层
+└─────────────────────────────────┘
+    ↓
+┌─────────────────────────────────┐
+│  TarboxBackend                  │  ← 后端实现
+│  + Layer 管理 (快照支持)        │
+└─────────────────────────────────┘
+```
 
 ## 设计目标
 

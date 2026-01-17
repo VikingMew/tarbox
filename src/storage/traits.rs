@@ -49,3 +49,133 @@ pub trait BlockRepository: Send + Sync {
     async fn list(&self, tenant_id: TenantId, inode_id: InodeId) -> Result<Vec<DataBlock>>;
     async fn delete(&self, tenant_id: TenantId, inode_id: InodeId) -> Result<u64>;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use uuid::Uuid;
+
+    #[test]
+    fn test_create_tenant_input_construction() {
+        let input = CreateTenantInput { tenant_name: "test-tenant".to_string() };
+        assert_eq!(input.tenant_name, "test-tenant");
+    }
+
+    #[test]
+    fn test_create_inode_input_construction() {
+        let tenant_id = Uuid::new_v4();
+        let input = CreateInodeInput {
+            tenant_id,
+            parent_id: Some(1),
+            name: "test.txt".to_string(),
+            inode_type: super::super::models::InodeType::File,
+            mode: 0o644,
+            uid: 1000,
+            gid: 1000,
+        };
+        assert_eq!(input.name, "test.txt");
+        assert_eq!(input.mode, 0o644);
+    }
+
+    #[test]
+    fn test_update_inode_input_all_none() {
+        let input = UpdateInodeInput {
+            size: None,
+            mode: None,
+            uid: None,
+            gid: None,
+            atime: None,
+            mtime: None,
+            ctime: None,
+        };
+        assert!(input.size.is_none());
+        assert!(input.mode.is_none());
+        assert!(input.uid.is_none());
+        assert!(input.gid.is_none());
+    }
+
+    #[test]
+    fn test_update_inode_input_partial() {
+        let input = UpdateInodeInput {
+            size: Some(2048),
+            mode: Some(0o755),
+            uid: None,
+            gid: None,
+            atime: None,
+            mtime: None,
+            ctime: None,
+        };
+        assert_eq!(input.size, Some(2048));
+        assert_eq!(input.mode, Some(0o755));
+        assert!(input.uid.is_none());
+    }
+
+    #[test]
+    fn test_create_block_input_construction() {
+        let tenant_id = Uuid::new_v4();
+        let input =
+            CreateBlockInput { tenant_id, inode_id: 123, block_index: 0, data: vec![1, 2, 3, 4] };
+        assert_eq!(input.block_index, 0);
+        assert_eq!(input.data.len(), 4);
+        assert_eq!(input.inode_id, 123);
+    }
+
+    #[test]
+    fn test_tenant_struct_fields() {
+        let tenant_id = Uuid::new_v4();
+        let now = Utc::now();
+        let tenant = Tenant {
+            tenant_id,
+            tenant_name: "test".to_string(),
+            root_inode_id: 1,
+            created_at: now,
+            updated_at: now,
+        };
+        assert_eq!(tenant.root_inode_id, 1);
+        assert_eq!(tenant.tenant_name, "test");
+    }
+
+    #[test]
+    fn test_inode_struct_construction() {
+        let tenant_id = Uuid::new_v4();
+        let now = Utc::now();
+        let inode = Inode {
+            inode_id: 42,
+            tenant_id,
+            parent_id: Some(1),
+            name: "file.txt".to_string(),
+            inode_type: super::super::models::InodeType::File,
+            mode: 0o644,
+            uid: 1000,
+            gid: 1000,
+            size: 1024,
+            atime: now,
+            mtime: now,
+            ctime: now,
+        };
+        assert_eq!(inode.inode_id, 42);
+        assert_eq!(inode.size, 1024);
+    }
+
+    #[test]
+    fn test_datablock_struct_construction() {
+        let tenant_id = Uuid::new_v4();
+        let block_id = Uuid::new_v4();
+        let now = Utc::now();
+        let data = vec![0u8; 4096];
+        let block = DataBlock {
+            block_id,
+            tenant_id,
+            inode_id: 100,
+            block_index: 0,
+            size: data.len() as i32,
+            data,
+            content_hash: "hash123".to_string(),
+            created_at: now,
+        };
+        assert_eq!(block.inode_id, 100);
+        assert_eq!(block.data.len(), 4096);
+        assert_eq!(block.size, 4096);
+    }
+}

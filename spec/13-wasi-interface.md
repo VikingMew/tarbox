@@ -1,6 +1,9 @@
 # Spec 13: WASI Interface
 
-**优先级**: P2 (高级功能)
+**优先级**: P2 (高级功能)  
+**状态**: 设计阶段  
+**依赖**: spec/14 (文件系统接口抽象层), spec/06 (API 设计)  
+**基于**: [spec/14-filesystem-interface.md](14-filesystem-interface.md)
 
 ## 概述
 
@@ -10,6 +13,32 @@ WASI (WebAssembly System Interface) 支持使 Tarbox 可以编译为 WebAssembly
 - **安全隔离**：WASM 的沙箱特性提供额外的安全层
 - **轻量级部署**：无需操作系统级依赖，启动快速
 - **云原生集成**：与 Kubernetes、Spin、Wasmtime、WasmEdge 等运行时集成
+
+**本规范描述 WASI 适配器的具体实现细节**，包括 WASI filesystem 接口映射、HTTP database client、运行时集成等。核心的文件系统操作通过 spec/14 定义的 `FilesystemInterface` 实现。
+
+## 架构定位
+
+```
+WASM Runtime (Wasmtime/Wasmer/Browser)
+    ↓
+WASI Preview 2 (wasi-filesystem)
+    ↓
+┌─────────────────────────────────┐
+│  WasiAdapter (本规范)           │  ← 协议适配层
+│  - WASI → Interface 映射        │
+│  - 文件描述符管理               │
+│  - WASI 错误码转换              │
+└─────────────────────────────────┘
+    ↓ 实现 FilesystemInterface trait
+┌─────────────────────────────────┐
+│  FilesystemInterface (spec/14)  │  ← 统一抽象层
+└─────────────────────────────────┘
+    ↓
+┌─────────────────────────────────┐
+│  HTTP Database Client           │  ← WASM 后端
+│  或 SQLite Embedded             │
+└─────────────────────────────────┘
+```
 
 ## 设计目标
 

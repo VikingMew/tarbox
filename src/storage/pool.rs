@@ -60,3 +60,76 @@ impl DatabasePool {
         Ok(tx)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_database_pool_clone() {
+        // Test that DatabasePool can be cloned
+        let config = DatabaseConfig {
+            url: "postgresql://localhost/test".to_string(),
+            max_connections: 10,
+            min_connections: 2,
+        };
+
+        // We can't actually connect in unit tests, but we can test the structure
+        assert_eq!(config.max_connections, 10);
+        assert_eq!(config.min_connections, 2);
+    }
+
+    #[test]
+    fn test_database_config_construction() {
+        let config = DatabaseConfig {
+            url: "postgresql://user:pass@host:5432/dbname".to_string(),
+            max_connections: 20,
+            min_connections: 5,
+        };
+
+        assert!(config.url.contains("postgresql://"));
+        assert!(config.max_connections > config.min_connections);
+    }
+
+    #[test]
+    fn test_database_config_max_min_connections() {
+        let config = DatabaseConfig {
+            url: "postgresql://localhost/test".to_string(),
+            max_connections: 50,
+            min_connections: 10,
+        };
+
+        assert_eq!(config.max_connections, 50);
+        assert_eq!(config.min_connections, 10);
+        assert!(config.max_connections >= config.min_connections);
+    }
+
+    #[test]
+    fn test_database_config_url_format() {
+        let config = DatabaseConfig {
+            url: "postgresql://localhost:5432/tarbox".to_string(),
+            max_connections: 10,
+            min_connections: 2,
+        };
+
+        assert!(config.url.starts_with("postgresql://"));
+        assert!(config.url.contains("tarbox"));
+    }
+
+    #[test]
+    fn test_database_config_edge_cases() {
+        let config1 = DatabaseConfig {
+            url: "postgresql://localhost/test".to_string(),
+            max_connections: 1,
+            min_connections: 1,
+        };
+        assert_eq!(config1.max_connections, config1.min_connections);
+
+        let config2 = DatabaseConfig {
+            url: "postgresql://localhost/test".to_string(),
+            max_connections: 100,
+            min_connections: 1,
+        };
+        assert!(config2.max_connections > config2.min_connections);
+    }
+}

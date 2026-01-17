@@ -1,8 +1,45 @@
-# FUSE 接口设计
+# Spec 02: FUSE 接口设计
+
+**优先级**: P0 (核心架构)  
+**状态**: 设计阶段  
+**依赖**: spec/14 (文件系统接口抽象层)  
+**基于**: [spec/14-filesystem-interface.md](14-filesystem-interface.md)
 
 ## 概述
 
 FUSE（Filesystem in Userspace）允许在用户空间实现文件系统，无需编写内核模块。Tarbox 通过 FUSE 提供标准 POSIX 文件系统接口。
+
+**本规范描述 FUSE 适配器的具体实现细节**，包括 POSIX 系统调用映射、异步/同步桥接、性能优化等。核心的文件系统操作语义由 spec/14 定义。
+
+## 架构定位
+
+```
+应用程序
+    ↓
+POSIX 系统调用 (open/read/write/...)
+    ↓
+内核 VFS 层
+    ↓
+FUSE 内核模块
+    ↓
+libfuse (用户空间)
+    ↓
+┌─────────────────────────────────┐
+│  FuseAdapter (本规范)           │  ← 协议适配层
+│  - POSIX → Interface 映射       │
+│  - 异步/同步桥接                │
+│  - errno 错误码转换             │
+└─────────────────────────────────┘
+    ↓ 实现 FilesystemInterface trait
+┌─────────────────────────────────┐
+│  FilesystemInterface (spec/14)  │  ← 统一抽象层
+└─────────────────────────────────┘
+    ↓
+┌─────────────────────────────────┐
+│  TarboxBackend                  │  ← 后端实现
+│  (fs/ + storage/ + layer/)      │
+└─────────────────────────────────┘
+```
 
 ## 设计目标
 

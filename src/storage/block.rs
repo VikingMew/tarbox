@@ -189,4 +189,59 @@ mod tests {
         assert_eq!(hash1, hash2);
         assert_eq!(hash2, hash3);
     }
+
+    #[test]
+    fn test_compute_content_hash_different_data() {
+        let data1 = b"hello";
+        let data2 = b"world";
+
+        let hash1 = compute_content_hash(data1);
+        let hash2 = compute_content_hash(data2);
+
+        assert_ne!(hash1, hash2);
+    }
+
+    #[test]
+    fn test_compute_content_hash_single_byte() {
+        let data = b"a";
+        let hash = compute_content_hash(data);
+        assert!(!hash.is_empty());
+        assert_eq!(hash.len(), 64); // SHA256 = 64 hex chars
+    }
+
+    #[test]
+    fn test_compute_content_hash_binary_data() {
+        let data = vec![0u8, 255u8, 128u8, 64u8];
+        let hash = compute_content_hash(&data);
+        assert!(!hash.is_empty());
+        assert_eq!(hash.len(), 64);
+    }
+
+    #[test]
+    fn test_compute_content_hash_utf8() {
+        let data = "Hello 世界 🌍".as_bytes();
+        let hash = compute_content_hash(data);
+        assert!(!hash.is_empty());
+        assert_eq!(hash.len(), 64);
+    }
+
+    #[test]
+    fn test_compute_content_hash_hex_format() {
+        let data = b"test";
+        let hash = compute_content_hash(data);
+
+        // Check if hash is valid hex
+        for c in hash.chars() {
+            assert!(c.is_ascii_hexdigit());
+        }
+    }
+
+    #[test]
+    fn test_compute_content_hash_case() {
+        let data = b"ABC";
+        let hash = compute_content_hash(data);
+
+        // SHA256 hex should be lowercase
+        assert_eq!(hash, hash.to_lowercase());
+    }
 }

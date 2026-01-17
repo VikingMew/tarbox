@@ -1,8 +1,10 @@
-# 数据库设计规范
+# 数据库设计规范 - MVP 核心
 
 ## 概述
 
-Tarbox 使用 PostgreSQL 作为存储后端，利用其 ACID 特性保证数据一致性。数据库设计遵循元数据与数据分离的原则，优化查询性能。
+Tarbox 使用 PostgreSQL 作为存储后端，利用其 ACID 特性保证数据一致性。本文档描述 MVP 阶段的核心数据库设计，包括租户管理、文件元数据和数据块存储。
+
+**高级特性**（分层、文本优化、审计日志等）见 [spec/01-advanced-storage.md](01-advanced-storage.md)。
 
 ## 设计原则
 
@@ -18,13 +20,7 @@ Tarbox 使用 PostgreSQL 作为存储后端，利用其 ACID 特性保证数据�
 - **日志表**：适度反范式，提高查询性能
 - **冗余字段**：在性能关键路径上适当冗余
 
-### 3. 分区策略
-
-- **时序数据**：按时间分区（审计日志、统计数据）
-- **大表分区**：避免单表过大影响性能
-- **自动管理**：使用触发器或定时任务自动创建分区
-
-### 4. 索引设计
+### 3. 索引设计
 
 - **主键索引**：所有表都有主键
 - **外键索引**：关联查询的外键建立索引
@@ -40,13 +36,15 @@ Tarbox 使用 PostgreSQL 作为存储后端，利用其 ACID 特性保证数据�
 - **主键包含租户 ID**：`PRIMARY KEY (tenant_id, inode_id)`
 - **外键包含租户 ID**：确保跨表引用在同一租户内
 - **索引以租户 ID 开头**：优化租户级查询性能
-- **所有查询必须指定租户**：WHERE tenant_id = ?
+- **所有查询必须指定租户**：`WHERE tenant_id = ?`
 
-### 租户表
+## MVP 核心表
+
+### 1. tenants 表（租户管理）
 
 ```sql
 CREATE TABLE tenants (
-    tenant_id UUID PRIMARY KEY,
+    tenant_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_name VARCHAR(253) NOT NULL UNIQUE,
     
     -- 组织信息
@@ -59,18 +57,16 @@ CREATE TABLE tenants (
     -- 配额
     quota_bytes BIGINT,
     quota_inodes BIGINT,
-    quota_layers INTEGER,
     
     -- 使用统计
     used_bytes BIGINT NOT NULL DEFAULT 0,
     used_inodes BIGINT NOT NULL DEFAULT 0,
-    used_layers INTEGER NOT NULL DEFAULT 0,
     
     -- 状态
     status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended', 'deleted')),
     
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     
     -- 配置
     config JSONB
@@ -78,11 +74,14 @@ CREATE TABLE tenants (
 
 CREATE INDEX idx_tenants_name ON tenants(tenant_name) WHERE status = 'active';
 CREATE INDEX idx_tenants_status ON tenants(status);
+
+COMMENT ON TABLE tenants IS 'MVP: 租户管理，实现多租户隔离';
+COMMENT ON COLUMN tenants.tenant_name IS '租户名称，全局唯一，符合 DNS 标签规范';
+COMMENT ON COLUMN tenants.root_inode_id IS '租户根目录的 inode ID';
+COMMENT ON COLUMN tenants.quota_bytes IS '存储配额（字节），NULL 表示无限制';
 ```
 
-## 核心数据模型
-
-### 1. inodes 表（文件/目录元数据）
+### 2. inodes 表（文件/目录元数据）
 
 ```sql
 CREATE TABLE inodes (
@@ -99,14 +98,14 @@ CREATE TABLE inodes (
     size BIGINT NOT NULL DEFAULT 0,          -- 文件大小（字节）
     
     -- 时间戳
-    atime TIMESTAMP NOT NULL DEFAULT NOW(),   -- 最后访问时间
-    mtime TIMESTAMP NOT NULL DEFAULT NOW(),   -- 最后修改时间
-    ctime TIMESTAMP NOT NULL DEFAULT NOW(),   -- 最后状态改变时间
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    atime TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,   -- 最后访问时间
+    mtime TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,   -- 最后修改时间
+    ctime TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,   -- 最后状态改变时间
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     
     -- 链接相关
     link_target TEXT,                         -- 符号链接目标
-    hardlink_target BIGINT REFERENCES inodes(inode_id), -- 硬链接目标
+    hardlink_target BIGINT,                   -- 硬链接目标 inode_id
     nlinks INTEGER NOT NULL DEFAULT 1,        -- 硬链接计数
     
     -- 扩展属性
@@ -115,7 +114,7 @@ CREATE TABLE inodes (
     -- 版本控制
     version INTEGER NOT NULL DEFAULT 1,
     is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
-    deleted_at TIMESTAMP,
+    deleted_at TIMESTAMPTZ,
     
     PRIMARY KEY (tenant_id, inode_id),
     FOREIGN KEY (tenant_id, parent_id) REFERENCES inodes(tenant_id, inode_id) ON DELETE CASCADE,
@@ -127,320 +126,126 @@ CREATE INDEX idx_inodes_tenant_parent ON inodes(tenant_id, parent_id) WHERE is_d
 CREATE INDEX idx_inodes_tenant_name ON inodes(tenant_id, name) WHERE is_deleted = FALSE;
 CREATE INDEX idx_inodes_tenant_type ON inodes(tenant_id, inode_type) WHERE is_deleted = FALSE;
 CREATE INDEX idx_inodes_tenant_parent_name ON inodes(tenant_id, parent_id, name) WHERE is_deleted = FALSE;
+
+COMMENT ON TABLE inodes IS 'MVP: 文件和目录的元数据';
+COMMENT ON COLUMN inodes.inode_id IS 'Inode ID，租户内唯一（BIGSERIAL）';
+COMMENT ON COLUMN inodes.parent_id IS '父目录的 inode_id，根目录为 NULL';
+COMMENT ON COLUMN inodes.mode IS 'POSIX 权限位，八进制表示（如 0755 = 493）';
+COMMENT ON COLUMN inodes.is_deleted IS '软删除标记';
 ```
 
-### 2. blocks 表（数据块存储）
+### 3. data_blocks 表（数据块存储）
 
 ```sql
-CREATE TABLE blocks (
-    block_id BIGSERIAL,
+CREATE TABLE data_blocks (
+    block_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
     inode_id BIGINT NOT NULL,
     block_index INTEGER NOT NULL,            -- 块在文件中的索引（0, 1, 2...）
     block_size INTEGER NOT NULL,             -- 实际数据大小
     data BYTEA NOT NULL,                     -- 数据块内容
-    checksum VARCHAR(64) NOT NULL,           -- SHA256 校验和
+    content_hash VARCHAR(64) NOT NULL,       -- BLAKE3 哈希
     
-    -- 压缩和去重
+    -- 压缩
     is_compressed BOOLEAN NOT NULL DEFAULT FALSE,
     compression_type VARCHAR(20),            -- 压缩算法（zstd, lz4, etc.）
     original_size INTEGER,                   -- 压缩前大小
     
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    last_accessed_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_accessed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     
-    PRIMARY KEY (tenant_id, block_id),
     FOREIGN KEY (tenant_id, inode_id) REFERENCES inodes(tenant_id, inode_id) ON DELETE CASCADE,
     UNIQUE(tenant_id, inode_id, block_index)
 );
 
 -- 索引
-CREATE INDEX idx_blocks_tenant_inode ON blocks(tenant_id, inode_id);
-CREATE INDEX idx_blocks_tenant_checksum ON blocks(tenant_id, checksum); -- 租户内去重
-CREATE INDEX idx_blocks_tenant_accessed ON blocks(tenant_id, last_accessed_at);
-```
+CREATE INDEX idx_data_blocks_tenant_inode ON data_blocks(tenant_id, inode_id, block_index);
+CREATE INDEX idx_data_blocks_tenant_hash ON data_blocks(tenant_id, content_hash);
+CREATE INDEX idx_data_blocks_accessed ON data_blocks(tenant_id, last_accessed_at);
 
-### 3. audit_logs 表（审计日志）
-
-```sql
-CREATE TABLE audit_logs (
-    log_id BIGSERIAL,
-    tenant_id UUID NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
-    inode_id BIGINT,
-    operation VARCHAR(50) NOT NULL,          -- 操作类型（read, write, mkdir, etc.）
-    
-    -- 用户信息
-    uid INTEGER NOT NULL,
-    gid INTEGER NOT NULL,
-    pid INTEGER,                             -- 进程 ID
-    
-    -- 操作详情
-    path TEXT,                               -- 文件路径
-    success BOOLEAN NOT NULL,                -- 操作是否成功
-    error_code INTEGER,                      -- 错误码
-    error_message TEXT,                      -- 错误信息
-    
-    -- 元数据
-    bytes_read BIGINT,
-    bytes_written BIGINT,
-    duration_ms INTEGER,                     -- 操作耗时（毫秒）
-    
-    -- 附加信息
-    metadata JSONB,                          -- 额外的元数据
-    
-    -- 原生挂载相关
-    is_native_mount BOOLEAN DEFAULT false,   -- 是否为原生挂载操作
-    native_source_path TEXT,                 -- 原生文件系统路径
-    
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    
-    -- 分区键
-    log_date DATE NOT NULL DEFAULT CURRENT_DATE,
-    
-    PRIMARY KEY (tenant_id, log_id),
-    FOREIGN KEY (tenant_id, inode_id) REFERENCES inodes(tenant_id, inode_id) ON DELETE SET NULL
-) PARTITION BY HASH (tenant_id);
-
--- 按租户分区（4个分区）
-CREATE TABLE audit_logs_0 PARTITION OF audit_logs
-    FOR VALUES WITH (MODULUS 4, REMAINDER 0);
-CREATE TABLE audit_logs_1 PARTITION OF audit_logs
-    FOR VALUES WITH (MODULUS 4, REMAINDER 1);
-CREATE TABLE audit_logs_2 PARTITION OF audit_logs
-    FOR VALUES WITH (MODULUS 4, REMAINDER 2);
-CREATE TABLE audit_logs_3 PARTITION OF audit_logs
-    FOR VALUES WITH (MODULUS 4, REMAINDER 3);
-
--- 索引
-CREATE INDEX idx_audit_tenant_inode ON audit_logs(tenant_id, inode_id, created_at);
-CREATE INDEX idx_audit_tenant_operation ON audit_logs(tenant_id, operation, created_at);
-CREATE INDEX idx_audit_tenant_user ON audit_logs(tenant_id, uid, created_at);
-CREATE INDEX idx_audit_tenant_created ON audit_logs(tenant_id, created_at);
-```
-
-### 4. snapshots 表（快照）
-
-```sql
-CREATE TABLE snapshots (
-    snapshot_id BIGSERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL UNIQUE,
-    description TEXT,
-    
-    -- 快照范围
-    root_inode_id BIGINT NOT NULL REFERENCES inodes(inode_id),
-    
-    -- 快照元数据
-    inode_count BIGINT NOT NULL,
-    total_size BIGINT NOT NULL,
-    
-    -- 状态
-    status VARCHAR(20) NOT NULL CHECK (status IN ('creating', 'ready', 'deleting', 'failed')),
-    
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    expires_at TIMESTAMP,                    -- 过期时间（可选）
-    
-    -- 快照数据（存储 inode 状态的 JSONB）
-    metadata JSONB NOT NULL
-);
-
--- 索引
-CREATE INDEX idx_snapshots_created ON snapshots(created_at);
-CREATE INDEX idx_snapshots_status ON snapshots(status);
-```
-
-### 5. mount_points 表（挂载点管理）
-
-```sql
-CREATE TABLE mount_points (
-    mount_id SERIAL PRIMARY KEY,
-    mount_path TEXT NOT NULL UNIQUE,
-    root_inode_id BIGINT NOT NULL REFERENCES inodes(inode_id),
-    
-    -- K8s 相关
-    namespace VARCHAR(253),
-    pvc_name VARCHAR(253),
-    pod_name VARCHAR(253),
-    
-    -- 挂载选项
-    read_only BOOLEAN NOT NULL DEFAULT FALSE,
-    options JSONB,                           -- 挂载选项
-    
-    -- 状态
-    status VARCHAR(20) NOT NULL CHECK (status IN ('active', 'inactive', 'error')),
-    
-    mounted_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    unmounted_at TIMESTAMP,
-    last_accessed_at TIMESTAMP NOT NULL DEFAULT NOW()
-);
-
--- 索引
-CREATE INDEX idx_mount_points_status ON mount_points(status);
-CREATE INDEX idx_mount_points_namespace ON mount_points(namespace, pvc_name);
-```
-
-### 6. text_blocks 表（文本块存储）
-
-```sql
-CREATE TABLE text_blocks (
-    block_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    content_hash VARCHAR(64) NOT NULL UNIQUE,
-    content TEXT NOT NULL,
-    line_count INTEGER NOT NULL,
-    byte_size INTEGER NOT NULL,
-    encoding VARCHAR(20) NOT NULL DEFAULT 'UTF-8',
-    ref_count INTEGER NOT NULL DEFAULT 0,
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    last_accessed_at TIMESTAMP NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX idx_text_blocks_hash ON text_blocks(content_hash);
-CREATE INDEX idx_text_blocks_ref_count ON text_blocks(ref_count);
-CREATE INDEX idx_text_blocks_last_accessed ON text_blocks(last_accessed_at);
-
-COMMENT ON TABLE text_blocks IS '文本文件内容块存储，支持跨文件和跨层去重';
-COMMENT ON COLUMN text_blocks.content_hash IS 'SHA-256 哈希，用于内容去重';
-COMMENT ON COLUMN text_blocks.ref_count IS '引用计数，为 0 时可以清理';
-```
-
-### 7. text_file_metadata 表（文本文件元数据）
-
-```sql
-CREATE TABLE text_file_metadata (
-    tenant_id UUID NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
-    inode_id BIGINT NOT NULL,
-    layer_id UUID NOT NULL,
-    total_lines INTEGER NOT NULL,
-    encoding VARCHAR(20) NOT NULL DEFAULT 'UTF-8',
-    line_ending VARCHAR(10) NOT NULL DEFAULT 'LF' CHECK (line_ending IN ('LF', 'CRLF', 'CR')),
-    has_trailing_newline BOOLEAN NOT NULL DEFAULT true,
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (tenant_id, inode_id, layer_id),
-    FOREIGN KEY (tenant_id, inode_id) REFERENCES inodes(tenant_id, inode_id) ON DELETE CASCADE
-);
-
-CREATE INDEX idx_text_file_metadata_layer ON text_file_metadata(layer_id);
-
-COMMENT ON TABLE text_file_metadata IS '文本文件的元数据信息';
-COMMENT ON COLUMN text_file_metadata.line_ending IS '行结束符类型：LF (Unix), CRLF (Windows), CR (旧Mac)';
-```
-
-### 8. text_line_map 表（文本行映射）
-
-```sql
-CREATE TABLE text_line_map (
-    tenant_id UUID NOT NULL,
-    inode_id BIGINT NOT NULL,
-    layer_id UUID NOT NULL,
-    line_number INTEGER NOT NULL,
-    block_id UUID NOT NULL REFERENCES text_blocks(block_id) ON DELETE RESTRICT,
-    block_line_offset INTEGER NOT NULL,
-    PRIMARY KEY (tenant_id, inode_id, layer_id, line_number),
-    FOREIGN KEY (tenant_id, inode_id, layer_id) 
-        REFERENCES text_file_metadata(tenant_id, inode_id, layer_id) ON DELETE CASCADE
-);
-
-CREATE INDEX idx_text_line_map_lookup 
-    ON text_line_map(tenant_id, inode_id, layer_id, line_number);
-CREATE INDEX idx_text_line_map_block 
-    ON text_line_map(block_id);
-
-COMMENT ON TABLE text_line_map IS '文本文件的行到 TextBlock 的映射';
-COMMENT ON COLUMN text_line_map.line_number IS '逻辑行号（从 1 开始）';
-COMMENT ON COLUMN text_line_map.block_line_offset IS '在 TextBlock 内的行偏移（从 0 开始）';
-```
-
-### 9. native_mounts 表（原生文件系统挂载）
-
-```sql
-CREATE TABLE native_mounts (
-    mount_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    
-    -- 挂载路径（虚拟路径）
-    mount_path TEXT NOT NULL,
-    
-    -- 原生系统路径
-    source_path TEXT NOT NULL,
-    
-    -- 访问模式
-    mode VARCHAR(2) NOT NULL CHECK (mode IN ('ro', 'rw')),
-    
-    -- 是否跨租户共享
-    is_shared BOOLEAN NOT NULL DEFAULT false,
-    
-    -- 如果不是 shared，可以指定特定租户
-    tenant_id UUID REFERENCES tenants(tenant_id) ON DELETE CASCADE,
-    
-    -- 启用状态
-    enabled BOOLEAN NOT NULL DEFAULT true,
-    
-    -- 优先级（用于路径匹配，数字越小优先级越高）
-    priority INTEGER NOT NULL DEFAULT 100,
-    
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    
-    -- 确保路径唯一性
-    UNIQUE(mount_path, tenant_id),
-    
-    -- 确保共享挂载没有 tenant_id
-    CHECK (NOT is_shared OR tenant_id IS NULL)
-);
-
-CREATE INDEX idx_native_mounts_path ON native_mounts(mount_path) WHERE enabled = true;
-CREATE INDEX idx_native_mounts_tenant ON native_mounts(tenant_id) WHERE enabled = true;
-CREATE INDEX idx_native_mounts_priority ON native_mounts(priority, mount_path);
-
-COMMENT ON TABLE native_mounts IS '原生文件系统挂载配置';
-COMMENT ON COLUMN native_mounts.mount_path IS '在 Tarbox 中的虚拟路径';
-COMMENT ON COLUMN native_mounts.source_path IS '宿主机的实际路径，支持变量 {tenant_id}';
-COMMENT ON COLUMN native_mounts.is_shared IS '是否跨租户共享（如系统目录）';
-COMMENT ON COLUMN native_mounts.priority IS '路径匹配优先级，越小越优先';
-```
-
-### 10. statistics 表（统计信息）
-
-```sql
-CREATE TABLE statistics (
-    stat_id BIGSERIAL PRIMARY KEY,
-    metric_name VARCHAR(100) NOT NULL,
-    metric_value BIGINT NOT NULL,
-    
-    -- 维度
-    mount_id INTEGER REFERENCES mount_points(mount_id) ON DELETE CASCADE,
-    layer_id UUID,  -- 关联的层
-    
-    -- 标签
-    labels JSONB,
-    
-    recorded_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    
-    -- 时间分区
-    stat_date DATE NOT NULL DEFAULT CURRENT_DATE
-) PARTITION BY RANGE (stat_date);
-
--- 创建分区
-CREATE TABLE statistics_2026_01 PARTITION OF statistics
-    FOR VALUES FROM ('2026-01-01') TO ('2026-02-01');
-
--- 索引
-CREATE INDEX idx_statistics_metric ON statistics(metric_name, recorded_at);
-CREATE INDEX idx_statistics_layer ON statistics(layer_id, recorded_at);
+COMMENT ON TABLE data_blocks IS 'MVP: 文件数据块存储';
+COMMENT ON COLUMN data_blocks.block_index IS '块在文件中的索引，从 0 开始';
+COMMENT ON COLUMN data_blocks.content_hash IS 'BLAKE3 内容哈希，用于去重和校验';
+COMMENT ON COLUMN data_blocks.data IS '实际数据内容（压缩后）';
 ```
 
 ## 初始化脚本
 
-### 创建根目录
+### 创建数据库
 
 ```sql
--- 插入根 inode（inode_id = 1）
-INSERT INTO inodes (inode_id, parent_id, name, inode_type, mode, uid, gid, size)
-VALUES (1, NULL, '/', 'dir', 493, 0, 0, 4096); -- mode 493 = 0755
+CREATE DATABASE tarbox
+    ENCODING = 'UTF8'
+    LC_COLLATE = 'en_US.UTF-8'
+    LC_CTYPE = 'en_US.UTF-8';
 
--- 重置序列
-SELECT setval('inodes_inode_id_seq', 1, true);
+\c tarbox
+
+-- 启用 UUID 扩展
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 ```
 
+### 创建租户和根目录
 
+```sql
+-- 创建租户
+DO $$
+DECLARE
+    new_tenant_id UUID;
+    root_inode_id BIGINT;
+BEGIN
+    -- 生成租户 ID
+    new_tenant_id := gen_random_uuid();
+    
+    -- 插入根 inode（inode_id 将由 SERIAL 生成）
+    INSERT INTO inodes (tenant_id, parent_id, name, inode_type, mode, uid, gid, size)
+    VALUES (new_tenant_id, NULL, '/', 'dir', 493, 0, 0, 4096) -- mode 493 = 0o755
+    RETURNING inode_id INTO root_inode_id;
+    
+    -- 插入租户
+    INSERT INTO tenants (tenant_id, tenant_name, root_inode_id, organization, project)
+    VALUES (new_tenant_id, 'default', root_inode_id, 'Tarbox', 'Default Project');
+    
+    RAISE NOTICE 'Created tenant: % with root inode: %', new_tenant_id, root_inode_id;
+END $$;
+```
+
+### 示例数据
+
+```sql
+-- 假设租户 ID 和根 inode ID 已知
+DO $$
+DECLARE
+    tenant UUID := '550e8400-e29b-41d4-a716-446655440000'; -- 替换为实际 tenant_id
+    root_inode BIGINT := 1; -- 替换为实际 root_inode_id
+    data_inode BIGINT;
+    file_inode BIGINT;
+BEGIN
+    -- 创建 /data 目录
+    INSERT INTO inodes (tenant_id, parent_id, name, inode_type, mode, uid, gid, size)
+    VALUES (tenant, root_inode, 'data', 'dir', 493, 1000, 1000, 4096)
+    RETURNING inode_id INTO data_inode;
+    
+    -- 创建 /data/hello.txt 文件
+    INSERT INTO inodes (tenant_id, parent_id, name, inode_type, mode, uid, gid, size)
+    VALUES (tenant, data_inode, 'hello.txt', 'file', 420, 1000, 1000, 13) -- mode 420 = 0o644
+    RETURNING inode_id INTO file_inode;
+    
+    -- 插入文件数据
+    INSERT INTO data_blocks (tenant_id, inode_id, block_index, block_size, data, content_hash)
+    VALUES (
+        tenant,
+        file_inode,
+        0,
+        13,
+        'Hello, World!'::bytea,
+        encode(digest('Hello, World!', 'sha256'), 'hex')
+    );
+    
+    RAISE NOTICE 'Created /data/hello.txt';
+END $$;
+```
 
 ## 性能优化
 
@@ -455,116 +260,247 @@ idle_timeout = 600
 max_lifetime = 1800
 ```
 
+### PostgreSQL 配置优化
+
+```ini
+# 内存配置
+shared_buffers = 4GB              # 共享缓冲区（服务器内存的 25%）
+effective_cache_size = 12GB       # 操作系统缓存（服务器内存的 75%）
+work_mem = 256MB                  # 每个操作的工作内存
+maintenance_work_mem = 1GB        # 维护操作内存
+
+# WAL 配置
+wal_buffers = 16MB
+checkpoint_timeout = 10min
+checkpoint_completion_target = 0.9
+max_wal_size = 4GB
+min_wal_size = 1GB
+
+# 并发配置
+max_connections = 200
+max_parallel_workers_per_gather = 4
+max_parallel_workers = 8
+
+# 查询优化
+random_page_cost = 1.1            # SSD 降低随机读成本
+effective_io_concurrency = 200    # SSD 可以处理更多并发 I/O
+default_statistics_target = 100   # 增加统计样本
+```
+
 ### 查询优化
 
 ```sql
 -- 启用并行查询
 SET max_parallel_workers_per_gather = 4;
 
--- 统计信息更新
+-- 定期更新统计信息
+ANALYZE tenants;
 ANALYZE inodes;
-ANALYZE blocks;
-ANALYZE audit_logs;
+ANALYZE data_blocks;
 
 -- 定期 VACUUM
--- 建议使用 pg_cron 或外部调度器
 VACUUM ANALYZE;
 ```
 
-### 分区管理
+## 监控查询
 
-创建自动分区管理函数：
+### 租户统计
 
 ```sql
-CREATE OR REPLACE FUNCTION create_monthly_partitions()
-RETURNS void AS $$
-DECLARE
-    start_date DATE;
-    end_date DATE;
-    partition_name TEXT;
-BEGIN
-    -- 为未来3个月创建分区
-    FOR i IN 0..2 LOOP
-        start_date := DATE_TRUNC('month', CURRENT_DATE + (i || ' months')::INTERVAL);
-        end_date := start_date + INTERVAL '1 month';
-        
-        -- audit_logs 分区
-        partition_name := 'audit_logs_' || TO_CHAR(start_date, 'YYYY_MM');
-        EXECUTE format(
-            'CREATE TABLE IF NOT EXISTS %I PARTITION OF audit_logs FOR VALUES FROM (%L) TO (%L)',
-            partition_name, start_date, end_date
-        );
-        
-        -- statistics 分区
-        partition_name := 'statistics_' || TO_CHAR(start_date, 'YYYY_MM');
-        EXECUTE format(
-            'CREATE TABLE IF NOT EXISTS %I PARTITION OF statistics FOR VALUES FROM (%L) TO (%L)',
-            partition_name, start_date, end_date
-        );
-    END LOOP;
-END;
-$$ LANGUAGE plpgsql;
-
--- 定期调用（使用 pg_cron）
-SELECT cron.schedule('create-partitions', '0 0 1 * *', 'SELECT create_monthly_partitions()');
+-- 租户使用情况
+SELECT 
+    t.tenant_name,
+    COUNT(DISTINCT i.inode_id) as file_count,
+    pg_size_pretty(SUM(i.size)) as total_size,
+    pg_size_pretty(t.quota_bytes) as quota,
+    ROUND(100.0 * SUM(i.size) / NULLIF(t.quota_bytes, 0), 2) as usage_percent
+FROM tenants t
+LEFT JOIN inodes i ON t.tenant_id = i.tenant_id
+WHERE i.is_deleted = FALSE
+GROUP BY t.tenant_id, t.tenant_name, t.quota_bytes;
 ```
 
-## 备份策略
+### 文件统计
+
+```sql
+-- 按类型统计文件
+SELECT 
+    inode_type,
+    COUNT(*) as count,
+    pg_size_pretty(SUM(size)) as total_size,
+    pg_size_pretty(AVG(size)::BIGINT) as avg_size
+FROM inodes
+WHERE tenant_id = $1 AND is_deleted = FALSE
+GROUP BY inode_type;
+
+-- 最大的文件
+SELECT 
+    i.inode_id,
+    i.name,
+    pg_size_pretty(i.size) as size,
+    i.mtime
+FROM inodes i
+WHERE i.tenant_id = $1 
+AND i.inode_type = 'file' 
+AND i.is_deleted = FALSE
+ORDER BY i.size DESC
+LIMIT 10;
+```
+
+### 数据块统计
+
+```sql
+-- 数据块统计
+SELECT 
+    COUNT(*) as block_count,
+    pg_size_pretty(SUM(block_size)) as total_size,
+    pg_size_pretty(AVG(block_size)::BIGINT) as avg_block_size,
+    COUNT(DISTINCT inode_id) as file_count,
+    SUM(CASE WHEN is_compressed THEN 1 ELSE 0 END) as compressed_blocks,
+    ROUND(100.0 * SUM(CASE WHEN is_compressed THEN block_size ELSE 0 END) / SUM(original_size), 2) as compression_ratio
+FROM data_blocks
+WHERE tenant_id = $1;
+
+-- 内容去重统计
+SELECT 
+    COUNT(*) as total_blocks,
+    COUNT(DISTINCT content_hash) as unique_blocks,
+    ROUND(100.0 * (1 - COUNT(DISTINCT content_hash)::NUMERIC / COUNT(*)), 2) as dedup_rate_percent
+FROM data_blocks
+WHERE tenant_id = $1;
+```
+
+## 备份与恢复
 
 ### 逻辑备份
 
 ```bash
 # 完整备份
-pg_dump -Fc tarbox > tarbox_backup_$(date +%Y%m%d).dump
+pg_dump -Fc -d tarbox > tarbox_backup_$(date +%Y%m%d).dump
 
 # 仅备份架构
-pg_dump -s tarbox > tarbox_schema.sql
+pg_dump -s -d tarbox > tarbox_schema.sql
+
+# 仅备份数据
+pg_dump -a -d tarbox > tarbox_data.sql
+
+# 恢复
+pg_restore -d tarbox tarbox_backup_20260117.dump
 ```
 
 ### 物理备份（推荐）
 
-使用 pgBackRest 或 WAL-G 进行连续归档和时间点恢复（PITR）。
+使用 pgBackRest 或 WAL-G 进行连续归档和时间点恢复（PITR）：
 
-## 监控指标
+```bash
+# 使用 pgBackRest
+pgbackrest --stanza=tarbox --type=full backup
+pgbackrest --stanza=tarbox --type=incr backup
 
-关键监控查询：
+# 恢复到特定时间点
+pgbackrest --stanza=tarbox --type=time "--target=2026-01-17 10:00:00" restore
+```
+
+## 维护任务
+
+### 自动更新时间戳
 
 ```sql
--- 文件统计
-SELECT inode_type, 
-       COUNT(*) as file_count,
-       SUM(size) as total_size,
-       AVG(size) as avg_size
-FROM inodes 
-WHERE is_deleted = FALSE
-GROUP BY inode_type;
+-- 自动更新 updated_at 字段
+CREATE OR REPLACE FUNCTION update_timestamp()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 
--- 最近活跃的文件
-SELECT inode_id, name, size, atime
-FROM inodes
-WHERE inode_type = 'file' AND is_deleted = FALSE
-ORDER BY atime DESC
-LIMIT 100;
-
--- 数据块统计
-SELECT COUNT(*) as block_count,
-       SUM(block_size) as total_size,
-       COUNT(DISTINCT inode_id) as file_count,
-       SUM(CASE WHEN is_compressed THEN 1 ELSE 0 END) as compressed_blocks
-FROM blocks;
-
--- 审计统计（最近24小时）
-SELECT operation,
-       COUNT(*) as count,
-       AVG(duration_ms) as avg_duration_ms,
-       SUM(CASE WHEN success THEN 1 ELSE 0 END) as success_count
-FROM audit_logs
-WHERE created_at > NOW() - INTERVAL '24 hours'
-GROUP BY operation;
-
--- 层统计
-SELECT COUNT(*) as layer_count,
-       SUM(file_count) as total_files,
-       SUM(total_size) as total_size
-FROM layers;
+CREATE TRIGGER trg_tenants_timestamp
+BEFORE UPDATE ON tenants
+FOR EACH ROW EXECUTE FUNCTION update_timestamp();
 ```
+
+### 自动更新租户统计
+
+```sql
+-- 更新租户使用统计
+CREATE OR REPLACE FUNCTION update_tenant_usage()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        UPDATE tenants
+        SET used_inodes = used_inodes + 1,
+            used_bytes = used_bytes + NEW.size
+        WHERE tenant_id = NEW.tenant_id;
+    ELSIF TG_OP = 'UPDATE' THEN
+        UPDATE tenants
+        SET used_bytes = used_bytes - OLD.size + NEW.size
+        WHERE tenant_id = NEW.tenant_id;
+    ELSIF TG_OP = 'DELETE' THEN
+        UPDATE tenants
+        SET used_inodes = used_inodes - 1,
+            used_bytes = used_bytes - OLD.size
+        WHERE tenant_id = OLD.tenant_id;
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_inodes_tenant_usage
+AFTER INSERT OR UPDATE OR DELETE ON inodes
+FOR EACH ROW 
+WHEN (OLD.is_deleted = FALSE OR NEW.is_deleted = FALSE)
+EXECUTE FUNCTION update_tenant_usage();
+```
+
+## 数据一致性检查
+
+```sql
+-- 检查孤立的 inode（没有父节点且不是根）
+SELECT i.tenant_id, i.inode_id, i.name
+FROM inodes i
+WHERE i.parent_id IS NOT NULL
+AND NOT EXISTS (
+    SELECT 1 FROM inodes p 
+    WHERE p.tenant_id = i.tenant_id 
+    AND p.inode_id = i.parent_id
+);
+
+-- 检查孤立的数据块（inode 已删除）
+SELECT db.block_id, db.inode_id
+FROM data_blocks db
+WHERE NOT EXISTS (
+    SELECT 1 FROM inodes i 
+    WHERE i.tenant_id = db.tenant_id 
+    AND i.inode_id = db.inode_id
+    AND i.is_deleted = FALSE
+);
+
+-- 检查租户配额超限
+SELECT t.tenant_name, t.used_bytes, t.quota_bytes
+FROM tenants t
+WHERE t.quota_bytes IS NOT NULL
+AND t.used_bytes > t.quota_bytes;
+```
+
+## 迁移到高级功能
+
+当需要启用高级功能时，执行以下步骤：
+
+1. **备份数据库**：`pg_dump -Fc tarbox > backup.dump`
+2. **执行高级 Schema**：运行 [spec/01-advanced-storage.md](01-advanced-storage.md) 中的建表语句
+3. **数据迁移**：根据需要迁移现有数据到新表
+4. **更新应用代码**：启用分层、审计等功能
+5. **验证功能**：测试新功能是否正常工作
+
+## 关联任务
+
+- **Task 02**: 数据库层 MVP ✅ 已完成
+- **Task 03**: 文件系统核心 MVP ✅ 已完成  
+- **Task 04**: CLI 工具 MVP ✅ 已完成
+
+## 相关规范
+
+- [spec/01-advanced: 高级存储特性](01-advanced-storage.md) - 分层、文本优化、审计日志
+- [spec/09: 多租户隔离](09-multi-tenancy.md) - 租户隔离机制详解
+- [spec/00: 系统概览](00-overview.md) - 整体架构
