@@ -240,8 +240,10 @@ mod tenant_model_tests {
         let hash2 = compute_content_hash(b"data2");
         assert_ne!(hash1, hash2);
     }
-
-}#[cfg(test)]mod database_config_tests {    use super::*;
+}
+#[cfg(test)]
+mod database_config_tests {
+    use super::*;
     #[test]
     fn test_database_config_comprehensive() {
         use tarbox::config::DatabaseConfig;
@@ -282,8 +284,10 @@ mod tenant_model_tests {
             assert!(config.max_connections >= config.min_connections);
         }
     }
-
-}#[cfg(test)]mod config_serialization_tests {    use super::*;
+}
+#[cfg(test)]
+mod config_serialization_tests {
+    use super::*;
     #[test]
     fn test_config_comprehensive() {
         use tarbox::config::*;

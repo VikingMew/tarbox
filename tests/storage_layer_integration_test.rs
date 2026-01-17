@@ -337,7 +337,8 @@ async fn test_inode_repository_get_by_parent_and_name_finds_child() {
         .times(1)
         .returning(move |_, _, _| Ok(Some(child_inode.clone())));
 
-    let result: Result<_> = mock_repo.get_by_parent_and_name(tenant_id, parent_id, "child.txt").await;
+    let result: Result<_> =
+        mock_repo.get_by_parent_and_name(tenant_id, parent_id, "child.txt").await;
 
     assert!(result.is_ok());
     let inode = result.unwrap();
