@@ -19,7 +19,9 @@ COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 # Create a dummy main.rs to build dependencies first (caching layer)
 RUN mkdir -p src && \
     echo "fn main() {}" > src/main.rs && \
-    echo "pub fn dummy() {}" > src/lib.rs
+    echo "pub mod config; pub mod fs; pub mod fuse; pub mod storage; pub mod types;" > src/lib.rs && \
+    mkdir -p src/config src/fs src/fuse src/storage && \
+    touch src/config/mod.rs src/fs/mod.rs src/fuse/mod.rs src/storage/mod.rs src/types.rs
 
 # Build dependencies only (this layer will be cached)
 RUN cargo build --release && \
