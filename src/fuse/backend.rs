@@ -399,9 +399,6 @@ mod tests {
 
     #[test]
     fn test_tarbox_backend_construction() {
-        
-        
-
         // Test that TarboxBackend can be constructed
         let tenant_id = uuid::Uuid::new_v4();
 
