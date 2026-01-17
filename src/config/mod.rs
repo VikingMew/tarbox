@@ -83,9 +83,9 @@ mod tests {
         assert_eq!(config.database.min_connections, 2);
 
         assert_eq!(config.fuse.mount_point, "/mnt/tarbox");
-        assert_eq!(config.fuse.allow_other, false);
+        assert!(!config.fuse.allow_other);
 
-        assert_eq!(config.audit.enabled, true);
+        assert!(config.audit.enabled);
         assert_eq!(config.audit.retention_days, 90);
 
         assert_eq!(config.cache.max_entries, 10000);
@@ -123,14 +123,14 @@ mod tests {
         let fuse_config = FuseConfig { mount_point: "/custom/path".to_string(), allow_other: true };
 
         assert_eq!(fuse_config.mount_point, "/custom/path");
-        assert_eq!(fuse_config.allow_other, true);
+        assert!(fuse_config.allow_other);
     }
 
     #[test]
     fn test_audit_config_disabled() {
         let audit_config = AuditConfig { enabled: false, retention_days: 30 };
 
-        assert_eq!(audit_config.enabled, false);
+        assert!(!audit_config.enabled);
         assert_eq!(audit_config.retention_days, 30);
     }
 
@@ -189,8 +189,8 @@ mod tests {
 
         let config = config.unwrap();
         assert_eq!(config.database.max_connections, 15);
-        assert_eq!(config.fuse.allow_other, true);
-        assert_eq!(config.audit.enabled, false);
+        assert!(config.fuse.allow_other);
+        assert!(!config.audit.enabled);
         assert_eq!(config.cache.max_entries, 5000);
     }
 }

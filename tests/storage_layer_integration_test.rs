@@ -152,7 +152,7 @@ async fn test_tenant_repository_delete_removes_tenant() {
     let result: Result<_> = mock_repo.delete(tenant_id).await;
 
     assert!(result.is_ok());
-    assert_eq!(result.unwrap(), true);
+    assert!(result.unwrap());
 }
 
 #[tokio::test]
@@ -165,7 +165,7 @@ async fn test_tenant_repository_delete_returns_false_for_nonexistent() {
     let result: Result<_> = mock_repo.delete(tenant_id).await;
 
     assert!(result.is_ok());
-    assert_eq!(result.unwrap(), false);
+    assert!(!result.unwrap());
 }
 
 // ============================================================================
@@ -407,7 +407,7 @@ async fn test_inode_repository_delete_removes_inode() {
     let result: Result<_> = mock_repo.delete(tenant_id, inode_id).await;
 
     assert!(result.is_ok());
-    assert_eq!(result.unwrap(), true);
+    assert!(result.unwrap());
 }
 
 #[tokio::test]

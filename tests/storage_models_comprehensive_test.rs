@@ -75,7 +75,7 @@ mod inode_model_tests {
 
 #[cfg(test)]
 mod update_inode_tests {
-    use super::*;
+    
 
     #[test]
     fn test_update_inode_input_partial_updates() {
@@ -138,16 +138,14 @@ mod block_model_tests {
 
         let tenant_id = Uuid::new_v4();
 
-        let inputs = vec![
-            CreateBlockInput { tenant_id, inode_id: 1, block_index: 0, data: vec![] },
+        let inputs = [CreateBlockInput { tenant_id, inode_id: 1, block_index: 0, data: vec![] },
             CreateBlockInput { tenant_id, inode_id: 2, block_index: 1, data: vec![0u8; 4096] },
             CreateBlockInput {
                 tenant_id,
                 inode_id: 3,
                 block_index: 2,
                 data: b"hello world".to_vec(),
-            },
-        ];
+            }];
 
         for (idx, input) in inputs.iter().enumerate() {
             assert_eq!(input.tenant_id, tenant_id);
@@ -179,7 +177,7 @@ mod block_model_tests {
 
 #[cfg(test)]
 mod tenant_model_tests {
-    use super::*;
+    
 
     #[test]
     fn test_create_tenant_input_name_variations() {
@@ -243,7 +241,7 @@ mod tenant_model_tests {
 }
 #[cfg(test)]
 mod database_config_tests {
-    use super::*;
+    
     #[test]
     fn test_database_config_comprehensive() {
         use tarbox::config::DatabaseConfig;
@@ -287,7 +285,7 @@ mod database_config_tests {
 }
 #[cfg(test)]
 mod config_serialization_tests {
-    use super::*;
+    
     #[test]
     fn test_config_comprehensive() {
         use tarbox::config::*;

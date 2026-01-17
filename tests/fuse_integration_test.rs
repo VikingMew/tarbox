@@ -33,7 +33,7 @@ mock! {
     }
 }
 
-fn create_test_file_attr(inode: u64, name: &str) -> FileAttr {
+fn create_test_file_attr(inode: u64, _name: &str) -> FileAttr {
     let now = Utc::now();
     FileAttr {
         inode,
@@ -49,7 +49,7 @@ fn create_test_file_attr(inode: u64, name: &str) -> FileAttr {
     }
 }
 
-fn create_test_dir_attr(inode: u64, name: &str) -> FileAttr {
+fn create_test_dir_attr(inode: u64, _name: &str) -> FileAttr {
     let now = Utc::now();
     FileAttr {
         inode,
