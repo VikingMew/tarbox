@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ master, main ]
+    branches: [master, main]
   pull_request:
-    branches: [ master, main ]
+    branches: [master, main]
 
 env:
   CARGO_TERM_COLOR: always
@@ -63,10 +63,10 @@ jobs:
         run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Build
-        run: cargo build --verbose
+        run: cargo build --verbose --features mockall
 
       - name: Run tests
-        run: cargo test --verbose
+        run: cargo test --verbose --features mockall
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/tarbox_test
 
