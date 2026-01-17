@@ -4,6 +4,8 @@
 
 实现 FUSE (Filesystem in Userspace) 接口，将文件系统核心功能暴露为标准的 POSIX 文件系统，支持用户态挂载和访问。
 
+**⭐ 重要架构变更**: 本任务基于 spec/14 的 FilesystemInterface 抽象层设计，实现的代码将被 CSI/WASI 复用（~90%代码共享）。
+
 ## 优先级
 
 **P0 - 最高优先级**
@@ -14,14 +16,97 @@
 - Task 02: 数据库存储层实现
 - Task 03: 基础文件系统实现
 
+## 依赖的Spec
+
+- **spec/14-filesystem-interface.md** - 统一的 FilesystemInterface 抽象层（核心）
+- **spec/02-fuse-interface.md** - FUSE 具体实现细节
+- **spec/09-multi-tenancy.md** - 多租户隔离机制
+
+## 架构说明
+
+根据 spec/14 的设计，本任务分为三层实现：
+
+```
+┌─────────────────────────────────────────┐
+│    FUSE Callbacks (fuser crate)         │  ← 5.3 FuseAdapter
+│    (同步接口，POSIX系统调用映射)          │
+└──────────────┬──────────────────────────┘
+               │ 桥接
+┌──────────────▼──────────────────────────┐
+│  FilesystemInterface trait              │  ← 5.1 接口抽象层
+│  (统一的异步接口，跨平台抽象)             │
+└──────────────┬──────────────────────────┘
+               │ 实现
+┌──────────────▼──────────────────────────┐
+│    TarboxBackend                        │  ← 5.2 核心实现
+│    (调用 FileSystem + Storage)          │
+└─────────────────────────────────────────┘
+```
+
+**关键优势**:
+- FilesystemInterface 是纯 Rust trait，90% 代码可被 CSI/WASI 复用
+- TarboxBackend 与 FUSE 解耦，易于测试
+- FuseAdapter 只负责协议转换，逻辑简单
+
 ## 子任务
 
-### 4.1 FUSE 框架集成
+### 5.1 实现 FilesystemInterface 抽象层 ⭐
 
-- [ ] 实现 FUSE Filesystem trait
-  - 使用 fuser crate
-  - 实现所有必需的回调函数
-  - 处理 FUSE 请求和响应
+**基于**: spec/14-filesystem-interface.md
+
+- [x] 定义 FilesystemInterface trait
+  - [x] 核心文件操作 (read_file, write_file, create_file, delete_file)
+  - [x] 目录操作 (create_dir, read_dir, remove_dir)
+  - [x] 元数据操作 (get_attr, set_attr, chmod, chown)
+  - [x] 文件系统信息 (statfs)
+  - [ ] 符号链接操作 (create_symlink, read_symlink) - 可选
+  - [ ] 扩展属性 (setxattr, getxattr, listxattr, removexattr) - 可选
+
+- [x] 定义统一的数据类型
+  - [x] FileAttr - 文件属性
+  - [x] DirEntry - 目录条目
+  - [x] SetAttr - 属性修改参数
+  - [x] StatFs - 文件系统统计
+  - [x] FileType - 文件类型枚举
+  - [x] FsError - 错误类型
+
+- [x] 实现错误映射
+  - [x] FsError → errno 映射
+  - [x] 标准错误类型 (PathNotFound, AlreadyExists, PermissionDenied 等)
+
+### 5.2 实现 TarboxBackend
+
+**基于**: spec/14 的 Backend 设计
+
+- [x] 创建 TarboxBackend 结构
+  - [x] 持有 PgPool 和 TenantId
+  - [x] 提供 new() 构造函数
+
+- [x] 实现 FilesystemInterface trait
+  - [x] 所有方法委托给 FileSystem 层
+  - [x] 类型转换 (Inode → FileAttr)
+  - [x] 错误转换 (anyhow::Error → FsError)
+  - [x] 路径解析和验证
+
+- [ ] 实现类型转换辅助函数
+  - [x] inode_to_file_attr()
+  - [x] inode_type_to_file_type()
+  - [ ] file_mode_to_posix()
+  - [ ] posix_mode_to_file()
+
+### 5.3 实现 FuseAdapter
+
+**基于**: spec/02-fuse-interface.md
+
+- [ ] 创建 FuseAdapter 结构
+  - 持有 Arc<dyn FilesystemInterface>
+  - 持有 Runtime handle (用于 block_on)
+  - 提供 new() 构造函数
+
+- [ ] 实现 fuser::Filesystem trait
+  - 所有回调委托给 FilesystemInterface
+  - 使用 block_on 桥接异步到同步
+  - FUSE 类型 → FilesystemInterface 类型转换
 
 - [ ] 实现挂载管理
   - `mount()` - 挂载文件系统

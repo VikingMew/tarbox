@@ -2,15 +2,26 @@
 
 ## 目标
 
-实现 PostgreSQL 存储层，包括数据库连接管理、表结构初始化、基础 CRUD 操作。
+在 Task 02 (MVP核心) 的基础上，实现高级存储特性，包括分层、文本优化、审计日志、原生挂载配置等。
+
+**注意**: Task 02 已实现 spec/01 (MVP核心: tenants, inodes, data_blocks)，本任务实现 spec/01-advanced 的高级特性。
 
 ## 优先级
 
-**P0 - 最高优先级**
+**P1 - 高优先级**
 
 ## 依赖
 
-- Task 01: 项目初始化和基础设施搭建
+- Task 01: 项目初始化和基础设施搭建 ✅
+- Task 02: 数据库存储层 MVP ✅
+
+## 依赖的Spec
+
+- **spec/01-advanced-storage.md** - 高级存储特性（核心）
+- spec/03-audit-system.md - 审计系统设计
+- spec/04-layered-filesystem.md - 分层文件系统
+- spec/10-text-file-optimization.md - 文本文件优化
+- spec/07-performance.md - 性能优化（包含原生挂载配置）
 
 ## 子任务
 
