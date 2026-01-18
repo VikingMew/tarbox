@@ -60,8 +60,13 @@ jobs:
       - name: Build
         run: cargo build --verbose --features mockall
 
-      - name: Run E2E tests only
-        run: cargo test --verbose --features mockall storage_e2e_test storage_models_comprehensive_test
+      - name: Run E2E tests - storage_e2e_test
+        run: cargo test --verbose --features mockall storage_e2e_test
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/tarbox_test
+
+      - name: Run E2E tests - storage_models_comprehensive_test
+        run: cargo test --verbose --features mockall storage_models_comprehensive_test
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/tarbox_test
 
