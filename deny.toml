@@ -1,11 +1,22 @@
 # cargo-deny configuration
 # See: https://embarkstudios.github.io/cargo-deny/
 
-# Skip license checking entirely by not including [licenses] section
-# If you want to check licenses later, add:
-# [licenses]
-# version = 2
-# allow = ["MIT", "Apache-2.0", ...]
+[licenses]
+version = 2
+# Allow all common open source licenses used in Rust ecosystem
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Unlicense",
+  "0BSD",
+  "CC0-1.0",
+  "MPL-2.0",
+  "Zlib",
+]
+confidence-threshold = 0.8
 
 [bans]
 # Warn on multiple versions of the same crate
