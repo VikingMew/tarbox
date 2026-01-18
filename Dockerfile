@@ -1,8 +1,18 @@
-# Multi-stage Dockerfile for Tarbox
+# Multi-stage Dockerfile for Tarbox with cargo-chef optimization
 # Produces a minimal runtime image with the compiled binary
 
-# Build stage
-FROM rust:1.92-bookworm AS builder
+# Chef stage - prepare recipe
+FROM rust:1.92-bookworm AS chef
+RUN cargo install cargo-chef
+WORKDIR /usr/src/tarbox
+
+# Planner stage - generate recipe.json
+FROM chef AS planner
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
+
+# Builder stage - build dependencies and application
+FROM chef AS builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
@@ -10,13 +20,12 @@ RUN apt-get update && apt-get install -y \
     libfuse3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Create app directory
-WORKDIR /usr/src/tarbox
+# Build dependencies only (this layer will be cached)
+COPY --from=planner /usr/src/tarbox/recipe.json recipe.json
+RUN cargo chef cook --release --recipe-path recipe.json
 
-# Copy the entire source
+# Copy source and build application
 COPY . .
-
-# Build the application
 RUN cargo build --release
 
 # Runtime stage
