@@ -76,7 +76,7 @@ jobs:
         run: cargo build --verbose --features mockall
 
       - name: Run tests (unit + integration with mocks only)
-        run: cargo test --lib --bins --verbose && cargo test --test fuse_integration_test --test config_and_storage_models_test --test storage_models_comprehensive_test --verbose
+        run: cargo test --lib --bins --verbose --features mockall && cargo test --test fuse_integration_test --test config_and_storage_models_test --test storage_models_comprehensive_test --verbose --features mockall
 
   security:
     name: Security Audit
