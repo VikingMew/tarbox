@@ -105,10 +105,9 @@
   - `make build` - 构建项目
   - `make clean` - 清理产物
 
-- [ ] VSCode 配置（可选）
-  - `.vscode/settings.json` - 编辑器设置
-  - `.vscode/launch.json` - 调试配置
-  - `.vscode/extensions.json` - 推荐扩展
+**不在本任务范围内（开发者个人偏好）：**
+- IDE 配置文件（如 `.vscode/`, `.idea/`）
+- 开发者可根据个人偏好自行配置
 
 ### 1.5 文档
 

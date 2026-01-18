@@ -5,8 +5,32 @@ on:
     branches: [master, main]
     tags:
       - "v*"
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "spec/**"
+      - "task/**"
+      - "LICENSE*"
+      - ".gitignore"
+      - ".editorconfig"
+      - "CODE_OF_CONDUCT.md"
+      - "CONTRIBUTING.md"
+      - "SECURITY.md"
+      - "CHANGELOG.md"
   pull_request:
     branches: [master, main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "spec/**"
+      - "task/**"
+      - "LICENSE*"
+      - ".gitignore"
+      - ".editorconfig"
+      - "CODE_OF_CONDUCT.md"
+      - "CONTRIBUTING.md"
+      - "SECURITY.md"
+      - "CHANGELOG.md"
 
 env:
   REGISTRY: ghcr.io

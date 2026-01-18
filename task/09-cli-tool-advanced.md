@@ -202,13 +202,10 @@
   tarbox config get <key>                         # 获取配置项
   ```
 
-- [ ] **插件系统（可选）**
-  ```bash
-  tarbox plugin list                              # 列出已安装插件
-  tarbox plugin install <name>                    # 安装插件
-  tarbox plugin enable <name>                     # 启用插件
-  tarbox plugin disable <name>                    # 禁用插件
-  ```
+**不在本任务范围内（未来扩展功能）：**
+- 插件系统 - 需要插件架构设计
+- 脚本执行支持 - 需要安全沙箱机制
+- Web UI 集成 - 属于独立的 Web 界面项目
 
 ## 实现细节
 

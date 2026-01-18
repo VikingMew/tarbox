@@ -232,8 +232,10 @@ Phase 4: 云原生 (计划中)     ░░░░░░░░░░░░░░░
   - wasm32-wasi target 支持
   - WASI filesystem 接口实现
   - HTTP database client
-  - SQLite 嵌入式模式（可选）
 - **预计工作量**: 6-8 周 (减少2-4周，得益于代码复用)
+
+**探索性功能（不在当前路线图）：**
+- SQLite 嵌入式模式 - 需要架构评估和性能验证
 - **关联 Spec**: **spec/14-filesystem-interface.md** (核心), spec/13-wasi-interface.md
 
 ---
