@@ -25,7 +25,20 @@ impl<'a> TenantRepository for TenantOperations<'a> {
 
         let mut tx = self.pool.begin().await?;
 
-        // Create root inode first (let BIGSERIAL generate the ID)
+        // Create tenant first with a placeholder root_inode_id
+        // We'll update it after creating the root inode
+        sqlx::query(
+            r#"
+            INSERT INTO tenants (tenant_id, tenant_name, root_inode_id)
+            VALUES ($1, $2, 0)
+            "#,
+        )
+        .bind(tenant_id)
+        .bind(&input.tenant_name)
+        .execute(&mut *tx)
+        .await?;
+
+        // Create root inode (let BIGSERIAL generate the ID)
         let root_inode = sqlx::query_as::<_, (InodeId,)>(
             r#"
             INSERT INTO inodes (tenant_id, parent_id, name, inode_type, mode, uid, gid, size)
@@ -45,16 +58,16 @@ impl<'a> TenantRepository for TenantOperations<'a> {
 
         let root_inode_id = root_inode.0;
 
-        // Create tenant with the actual root_inode_id
+        // Update tenant with the actual root_inode_id
         let tenant = sqlx::query_as::<_, Tenant>(
             r#"
-            INSERT INTO tenants (tenant_id, tenant_name, root_inode_id)
-            VALUES ($1, $2, $3)
+            UPDATE tenants
+            SET root_inode_id = $2
+            WHERE tenant_id = $1
             RETURNING tenant_id, tenant_name, root_inode_id, created_at, updated_at
             "#,
         )
         .bind(tenant_id)
-        .bind(&input.tenant_name)
         .bind(root_inode_id)
         .fetch_one(&mut *tx)
         .await?;
