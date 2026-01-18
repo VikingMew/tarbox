@@ -1,10 +1,12 @@
 use anyhow::Result;
+use async_trait::async_trait;
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::types::{BlockId, InodeId, TenantId};
 
 use super::models::{CreateBlockInput, DataBlock};
+use super::traits::BlockRepository;
 
 pub struct BlockOperations<'a> {
     pool: &'a PgPool,
@@ -147,6 +149,31 @@ impl<'a> BlockOperations<'a> {
 pub fn compute_content_hash(data: &[u8]) -> String {
     let hash = blake3::hash(data);
     hash.to_hex().to_string()
+}
+
+// Implement BlockRepository trait for BlockOperations
+#[async_trait]
+impl<'a> BlockRepository for BlockOperations<'a> {
+    async fn create(&self, input: CreateBlockInput) -> Result<DataBlock> {
+        self.create(input).await
+    }
+
+    async fn get(
+        &self,
+        tenant_id: TenantId,
+        inode_id: InodeId,
+        block_index: i32,
+    ) -> Result<Option<DataBlock>> {
+        self.get(tenant_id, inode_id, block_index).await
+    }
+
+    async fn list(&self, tenant_id: TenantId, inode_id: InodeId) -> Result<Vec<DataBlock>> {
+        BlockOperations::list(self, tenant_id, inode_id).await
+    }
+
+    async fn delete(&self, tenant_id: TenantId, inode_id: InodeId) -> Result<u64> {
+        BlockOperations::delete(self, tenant_id, inode_id).await
+    }
 }
 
 #[cfg(test)]

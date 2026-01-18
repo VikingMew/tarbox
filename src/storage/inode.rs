@@ -1,10 +1,12 @@
 use anyhow::Result;
+use async_trait::async_trait;
 use chrono::Utc;
 use sqlx::PgPool;
 
 use crate::types::{InodeId, TenantId};
 
 use super::models::{CreateInodeInput, Inode, UpdateInodeInput};
+use super::traits::InodeRepository;
 
 pub struct InodeOperations<'a> {
     pool: &'a PgPool,
@@ -206,5 +208,43 @@ impl<'a> InodeOperations<'a> {
         .await?;
 
         Ok(children)
+    }
+}
+
+// Implement InodeRepository trait for InodeOperations
+#[async_trait]
+impl<'a> InodeRepository for InodeOperations<'a> {
+    async fn create(&self, input: CreateInodeInput) -> Result<Inode> {
+        self.create(input).await
+    }
+
+    async fn get(&self, tenant_id: TenantId, inode_id: InodeId) -> Result<Option<Inode>> {
+        self.get(tenant_id, inode_id).await
+    }
+
+    async fn get_by_parent_and_name(
+        &self,
+        tenant_id: TenantId,
+        parent_id: InodeId,
+        name: &str,
+    ) -> Result<Option<Inode>> {
+        self.get_by_parent_and_name(tenant_id, parent_id, name).await
+    }
+
+    async fn update(
+        &self,
+        tenant_id: TenantId,
+        inode_id: InodeId,
+        input: UpdateInodeInput,
+    ) -> Result<Inode> {
+        self.update(tenant_id, inode_id, input).await
+    }
+
+    async fn delete(&self, tenant_id: TenantId, inode_id: InodeId) -> Result<bool> {
+        self.delete(tenant_id, inode_id).await
+    }
+
+    async fn list_children(&self, tenant_id: TenantId, parent_id: InodeId) -> Result<Vec<Inode>> {
+        self.list_children(tenant_id, parent_id).await
     }
 }

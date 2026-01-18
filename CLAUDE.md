@@ -141,6 +141,16 @@ src/
 - All async with tokio runtime
 - Use prepared statements for repeated queries
 
+### Documentation Rules
+- **NEVER create new document types** (no SUMMARY.md, STATUS.md, REPORT.md, etc.)
+- **Only three documentation locations**:
+  - `doc/` - External/user-facing documentation
+  - `spec/` - Architecture design documents
+  - `task/` - Task descriptions and progress tracking
+- All three have templates - follow them strictly
+- Task status belongs in `task/*.md`, NOT in separate files
+- Architecture belongs in `spec/*.md`, NOT in separate files
+
 ## Critical Implementation Details
 
 ### Multi-tenancy

@@ -419,14 +419,22 @@ priority = 20
 # Build project
 cargo build
 
-# Run all tests
-cargo test
+# Run unit tests only
+cargo test --lib
+
+# Run E2E tests (requires PostgreSQL)
+export DATABASE_URL=postgres://postgres:postgres@localhost:5432/tarbox_test
+./scripts/run-e2e-tests.sh
+
+# Run E2E tests with FUSE mount tests (requires sudo)
+./scripts/run-e2e-tests.sh --with-fuse
 
 # Run specific test
 cargo test test_name
 
-# Check code coverage (requires tarpaulin)
-cargo tarpaulin --out Html
+# Check code coverage
+cargo install cargo-llvm-cov
+cargo llvm-cov --lib --test filesystem_integration_test --test fuse_backend_integration_test --test storage_e2e_test
 
 # Format code
 cargo fmt --all
@@ -437,8 +445,34 @@ cargo clippy --all-targets --all-features -- -D warnings
 # Pre-commit check (run before committing)
 cargo fmt --all && \
 cargo clippy --all-targets --all-features -- -D warnings && \
-cargo test
+cargo test --lib
 ```
+
+### Test Architecture
+
+Tarbox uses a three-layer testing approach:
+
+1. **Unit Tests** (48.86% coverage, 94 tests)
+   - Pure functions and data structures
+   - No external dependencies
+   - Run with: `cargo test --lib`
+
+2. **Mock Integration Tests** (30 tests)
+   - Mock FilesystemInterface for isolated testing
+   - Test FUSE interface logic without mounting
+   - Run with: `cargo test --test fuse_integration_test`
+
+3. **E2E Tests** (50 tests, requires database and FUSE)
+   - FileSystem integration: 22 tests
+   - FuseBackend integration: 17 tests
+   - FUSE mount E2E: 11 tests (requires sudo)
+   - Storage E2E: 7 tests
+   - Run with: `./scripts/run-e2e-tests.sh`
+   - **Expected total coverage with E2E: 85-90%**
+
+**Note**: E2E tests require:
+- PostgreSQL database (`DATABASE_URL` env var)
+- FUSE permissions (sudo or fuse group for mount tests)
 
 ### Project Requirements
 

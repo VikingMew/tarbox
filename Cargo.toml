@@ -46,6 +46,7 @@ uuid = { version = "1.19.0", features = ["serde", "v4"] }
 criterion = "0.8.1"
 mockall = "0.14.0"
 proptest = "1.9.0"
+tempfile = "3.24.0"
 tokio-test = "0.4.5"
 
 [build-dependencies]

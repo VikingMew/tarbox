@@ -3150,6 +3150,7 @@ dependencies = [
  "sha2",
  "similar",
  "sqlx",
+ "tempfile",
  "thiserror 2.0.17",
  "tokio",
  "tokio-test",
