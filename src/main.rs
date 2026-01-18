@@ -1,7 +1,9 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use std::sync::Arc;
 use tarbox::config::DatabaseConfig;
 use tarbox::fs::FileSystem;
+use tarbox::fuse::{MountOptions, mount, unmount};
 use tarbox::storage::{
     CreateTenantInput, DatabasePool, InodeType, TenantOperations, TenantRepository,
 };
@@ -75,6 +77,27 @@ enum Commands {
     Stat {
         #[arg(help = "Path to stat")]
         path: String,
+    },
+
+    #[command(about = "Mount filesystem via FUSE")]
+    Mount {
+        #[arg(help = "Mount point directory")]
+        mountpoint: String,
+
+        #[arg(long, help = "Allow other users to access")]
+        allow_other: bool,
+
+        #[arg(long, help = "Allow root to access")]
+        allow_root: bool,
+
+        #[arg(long, help = "Mount as read-only")]
+        read_only: bool,
+    },
+
+    #[command(about = "Unmount FUSE filesystem")]
+    Umount {
+        #[arg(help = "Mount point directory")]
+        mountpoint: String,
     },
 }
 
@@ -207,6 +230,36 @@ async fn main() -> Result<()> {
             println!("Access: {}", inode.atime);
             println!("Modify: {}", inode.mtime);
             println!("Change: {}", inode.ctime);
+            Ok(())
+        }
+        Commands::Mount { mountpoint, allow_other, allow_root, read_only } => {
+            let tenant_id = get_tenant_id(&config, &cli.tenant).await?;
+            let pool = DatabasePool::new(&config).await?;
+
+            let mount_options = MountOptions {
+                allow_other,
+                allow_root,
+                read_only,
+                fsname: Some(format!("tarbox:{}", cli.tenant.as_ref().unwrap())),
+                auto_unmount: true,
+            };
+
+            println!("Mounting Tarbox filesystem at: {}", mountpoint);
+            println!("Tenant: {}", cli.tenant.as_ref().unwrap());
+            println!("Press Ctrl+C to unmount");
+
+            let _session =
+                mount(Arc::new(pool.pool().clone()), tenant_id, &mountpoint, mount_options)?;
+
+            // Keep the process running until Ctrl+C
+            tokio::signal::ctrl_c().await?;
+
+            println!("\nUnmounting filesystem...");
+            Ok(())
+        }
+        Commands::Umount { mountpoint } => {
+            unmount(&mountpoint)?;
+            println!("Unmounted: {}", mountpoint);
             Ok(())
         }
     }
