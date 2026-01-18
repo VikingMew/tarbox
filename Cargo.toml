@@ -3,7 +3,7 @@ name = "tarbox"
 version = "0.1.0"
 edition = "2024"
 readme = "README.md"
-license = "MPL"
+license = "MPL-2.0"
 
 [dependencies]
 anyhow = "1.0.100"
