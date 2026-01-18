@@ -4,7 +4,8 @@
 
 **A PostgreSQL-based distributed filesystem for AI agents and cloud-native environments**
 
-[![CI](https://github.com/VikingMew/tarbox/workflows/CI/badge.svg)](https://github.com/VikingMew/tarbox/actions)
+[![CI](https://github.com/VikingMew/tarbox/workflows/CI/badge.svg)](https://github.com/VikingMew/tarbox/actions/workflows/ci.yml)
+[![E2E Tests](https://github.com/VikingMew/tarbox/workflows/E2E%20Tests/badge.svg)](https://github.com/VikingMew/tarbox/actions/workflows/e2e.yml)
 [![License: MPL-2.0](https://img.shields.io/badge/License-MPL2.0-blue.svg)](LICENSE)
 [![Rust Version](https://img.shields.io/badge/rust-1.92%2B-orange.svg)](https://www.rust-lang.org)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-14%2B-336791.svg)](https://www.postgresql.org)
