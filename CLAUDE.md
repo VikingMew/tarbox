@@ -23,6 +23,14 @@ cargo fmt --all                                  # Format code
 cargo clippy --all-targets --all-features -- -D warnings  # Lint
 ```
 
+### Git Hooks Setup
+```bash
+./scripts/install-hooks.sh    # Install pre-commit hooks (fmt + clippy)
+git commit --no-verify         # Bypass hooks (not recommended)
+```
+
+The pre-commit hook automatically runs `cargo fmt --check` and `cargo clippy` before each commit to ensure code quality.
+
 ### Pre-commit Check
 ```bash
 cargo fmt --all && \
