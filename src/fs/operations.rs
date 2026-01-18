@@ -4,21 +4,27 @@ use crate::fs::error::{FsError, FsResult};
 use crate::fs::path::{normalize_path, path_components, split_path};
 use crate::storage::{
     BlockOperations, CreateBlockInput, CreateInodeInput, Inode, InodeOperations, InodeType,
-    UpdateInodeInput,
+    TenantOperations, TenantRepository, UpdateInodeInput,
 };
 use crate::types::{InodeId, TenantId};
 
 const BLOCK_SIZE: usize = 4096;
-const ROOT_INODE_ID: InodeId = 1;
 
 pub struct FileSystem<'a> {
-    pool: &'a PgPool,
-    tenant_id: TenantId,
+    pub(crate) pool: &'a PgPool,
+    pub(crate) tenant_id: TenantId,
+    pub(crate) root_inode_id: InodeId,
 }
 
 impl<'a> FileSystem<'a> {
-    pub fn new(pool: &'a PgPool, tenant_id: TenantId) -> Self {
-        Self { pool, tenant_id }
+    pub async fn new(pool: &'a PgPool, tenant_id: TenantId) -> FsResult<Self> {
+        let tenant_ops = TenantOperations::new(pool);
+        let tenant = tenant_ops
+            .get_by_id(tenant_id)
+            .await?
+            .ok_or_else(|| FsError::PathNotFound("tenant not found".to_string()))?;
+
+        Ok(Self { pool, tenant_id, root_inode_id: tenant.root_inode_id })
     }
 
     pub async fn resolve_path(&self, path: &str) -> FsResult<Inode> {
@@ -27,13 +33,13 @@ impl<'a> FileSystem<'a> {
         if normalized == "/" {
             let inode_ops = InodeOperations::new(self.pool);
             return inode_ops
-                .get(self.tenant_id, ROOT_INODE_ID)
+                .get(self.tenant_id, self.root_inode_id)
                 .await?
                 .ok_or_else(|| FsError::PathNotFound("/".to_string()));
         }
 
         let components = path_components(&normalized)?;
-        let mut current_inode_id = ROOT_INODE_ID;
+        let mut current_inode_id = self.root_inode_id;
         let inode_ops = InodeOperations::new(self.pool);
 
         for component in components {

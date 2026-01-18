@@ -2,23 +2,36 @@
 
 use super::interface::*;
 use crate::fs::operations::FileSystem;
-use crate::storage::InodeType;
-use crate::types::TenantId;
+use crate::storage::{InodeType, TenantOperations, TenantRepository};
+use crate::types::{InodeId, TenantId};
 use sqlx::PgPool;
 use std::sync::Arc;
 
 pub struct TarboxBackend {
     pool: Arc<PgPool>,
     tenant_id: TenantId,
+    root_inode_id: InodeId,
 }
 
 impl TarboxBackend {
-    pub fn new(pool: Arc<PgPool>, tenant_id: TenantId) -> Self {
-        Self { pool, tenant_id }
+    pub async fn new(pool: Arc<PgPool>, tenant_id: TenantId) -> Result<Self, FsError> {
+        let tenant_ops = TenantOperations::new(&pool);
+        let tenant = tenant_ops
+            .get_by_id(tenant_id)
+            .await
+            .map_err(|e| FsError::IoError(e.to_string()))?
+            .ok_or_else(|| FsError::PathNotFound("tenant not found".to_string()))?;
+
+        Ok(Self { pool, tenant_id, root_inode_id: tenant.root_inode_id })
     }
 
-    fn fs(&self) -> FileSystem<'_> {
-        FileSystem::new(&self.pool, self.tenant_id)
+    fn fs(&self) -> Result<FileSystem<'_>, FsError> {
+        // Create FileSystem directly without fetching tenant again
+        Ok(FileSystem {
+            pool: &self.pool,
+            tenant_id: self.tenant_id,
+            root_inode_id: self.root_inode_id,
+        })
     }
 
     fn inode_type_to_file_type(inode_type: &InodeType) -> FileType {
@@ -48,7 +61,7 @@ impl TarboxBackend {
 #[async_trait::async_trait]
 impl FilesystemInterface for TarboxBackend {
     async fn read_file(&self, path: &str, offset: u64, size: u32) -> FsResult<Vec<u8>> {
-        let data = self.fs().read_file(path).await.map_err(|e| FsError::IoError(e.to_string()))?;
+        let data = self.fs()?.read_file(path).await.map_err(|e| FsError::IoError(e.to_string()))?;
         let start = offset as usize;
         let end = std::cmp::min(start + size as usize, data.len());
         if start >= data.len() {
@@ -61,36 +74,36 @@ impl FilesystemInterface for TarboxBackend {
         if offset != 0 {
             return Err(FsError::NotSupported("Offset writes not supported yet".to_string()));
         }
-        self.fs().write_file(path, data).await.map_err(|e| FsError::IoError(e.to_string()))?;
+        self.fs()?.write_file(path, data).await.map_err(|e| FsError::IoError(e.to_string()))?;
         Ok(data.len() as u32)
     }
 
     async fn create_file(&self, path: &str, _mode: u32) -> FsResult<FileAttr> {
         let inode =
-            self.fs().create_file(path).await.map_err(|e| FsError::IoError(e.to_string()))?;
+            self.fs()?.create_file(path).await.map_err(|e| FsError::IoError(e.to_string()))?;
         Ok(Self::inode_to_attr(&inode))
     }
 
     async fn delete_file(&self, path: &str) -> FsResult<()> {
-        self.fs().delete_file(path).await.map_err(|e| FsError::IoError(e.to_string()))
+        self.fs()?.delete_file(path).await.map_err(|e| FsError::IoError(e.to_string()))
     }
 
     async fn truncate(&self, path: &str, size: u64) -> FsResult<()> {
         if size != 0 {
             return Err(FsError::NotSupported("Non-zero truncate not supported yet".to_string()));
         }
-        self.fs().write_file(path, &[]).await.map_err(|e| FsError::IoError(e.to_string()))
+        self.fs()?.write_file(path, &[]).await.map_err(|e| FsError::IoError(e.to_string()))
     }
 
     async fn create_dir(&self, path: &str, _mode: u32) -> FsResult<FileAttr> {
         let inode =
-            self.fs().create_directory(path).await.map_err(|e| FsError::IoError(e.to_string()))?;
+            self.fs()?.create_directory(path).await.map_err(|e| FsError::IoError(e.to_string()))?;
         Ok(Self::inode_to_attr(&inode))
     }
 
     async fn read_dir(&self, path: &str) -> FsResult<Vec<DirEntry>> {
         let entries =
-            self.fs().list_directory(path).await.map_err(|e| FsError::IoError(e.to_string()))?;
+            self.fs()?.list_directory(path).await.map_err(|e| FsError::IoError(e.to_string()))?;
         Ok(entries
             .into_iter()
             .map(|inode| DirEntry {
@@ -102,17 +115,17 @@ impl FilesystemInterface for TarboxBackend {
     }
 
     async fn remove_dir(&self, path: &str) -> FsResult<()> {
-        self.fs().remove_directory(path).await.map_err(|e| FsError::IoError(e.to_string()))
+        self.fs()?.remove_directory(path).await.map_err(|e| FsError::IoError(e.to_string()))
     }
 
     async fn get_attr(&self, path: &str) -> FsResult<FileAttr> {
-        let inode = self.fs().stat(path).await.map_err(|e| FsError::IoError(e.to_string()))?;
+        let inode = self.fs()?.stat(path).await.map_err(|e| FsError::IoError(e.to_string()))?;
         Ok(Self::inode_to_attr(&inode))
     }
 
     async fn set_attr(&self, path: &str, attr: SetAttr) -> FsResult<FileAttr> {
         if let Some(mode) = attr.mode {
-            self.fs()
+            self.fs()?
                 .chmod(path, mode as i32)
                 .await
                 .map_err(|e| FsError::IoError(e.to_string()))?;
@@ -120,7 +133,7 @@ impl FilesystemInterface for TarboxBackend {
         if attr.uid.is_some() || attr.gid.is_some() {
             let uid = attr.uid.unwrap_or(0) as i32;
             let gid = attr.gid.unwrap_or(0) as i32;
-            self.fs().chown(path, uid, gid).await.map_err(|e| FsError::IoError(e.to_string()))?;
+            self.fs()?.chown(path, uid, gid).await.map_err(|e| FsError::IoError(e.to_string()))?;
         }
         if let Some(size) = attr.size {
             self.truncate(path, size).await?;
@@ -129,11 +142,11 @@ impl FilesystemInterface for TarboxBackend {
     }
 
     async fn chmod(&self, path: &str, mode: u32) -> FsResult<()> {
-        self.fs().chmod(path, mode as i32).await.map_err(|e| FsError::IoError(e.to_string()))
+        self.fs()?.chmod(path, mode as i32).await.map_err(|e| FsError::IoError(e.to_string()))
     }
 
     async fn chown(&self, path: &str, uid: u32, gid: u32) -> FsResult<()> {
-        self.fs()
+        self.fs()?
             .chown(path, uid as i32, gid as i32)
             .await
             .map_err(|e| FsError::IoError(e.to_string()))

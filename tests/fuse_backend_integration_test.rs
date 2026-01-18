@@ -35,7 +35,7 @@ async fn test_backend_lookup_root() -> Result<()> {
     cleanup_tenant(&pool, &tenant_name).await?;
 
     let tenant = tenant_ops.create(CreateTenantInput { tenant_name: tenant_name.clone() }).await?;
-    let backend = TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id);
+    let backend = TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id).await?;
 
     let attr = backend.get_attr("/").await?;
     assert_eq!(attr.kind, FileType::Directory);
@@ -54,7 +54,7 @@ async fn test_backend_create_and_lookup_file() -> Result<()> {
     cleanup_tenant(&pool, &tenant_name).await?;
 
     let tenant = tenant_ops.create(CreateTenantInput { tenant_name: tenant_name.clone() }).await?;
-    let backend = TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id);
+    let backend = TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id).await?;
 
     let file_attr = backend.create_file("/test.txt", 0o644).await?;
     assert_eq!(file_attr.kind, FileType::RegularFile);
@@ -77,7 +77,7 @@ async fn test_backend_write_and_read_file() -> Result<()> {
     cleanup_tenant(&pool, &tenant_name).await?;
 
     let tenant = tenant_ops.create(CreateTenantInput { tenant_name: tenant_name.clone() }).await?;
-    let backend = TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id);
+    let backend = TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id).await?;
 
     backend.create_file("/data.txt", 0o644).await?;
 
@@ -101,7 +101,7 @@ async fn test_backend_read_with_offset() -> Result<()> {
     cleanup_tenant(&pool, &tenant_name).await?;
 
     let tenant = tenant_ops.create(CreateTenantInput { tenant_name: tenant_name.clone() }).await?;
-    let backend = TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id);
+    let backend = TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id).await?;
 
     backend.create_file("/offset_test.txt", 0o644).await?;
 
@@ -133,7 +133,7 @@ async fn test_backend_truncate() -> Result<()> {
     cleanup_tenant(&pool, &tenant_name).await?;
 
     let tenant = tenant_ops.create(CreateTenantInput { tenant_name: tenant_name.clone() }).await?;
-    let backend = TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id);
+    let backend = TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id).await?;
 
     backend.create_file("/truncate_test.txt", 0o644).await?;
     backend.write_file("/truncate_test.txt", 0, b"Some data").await?;
@@ -156,7 +156,7 @@ async fn test_backend_delete_file() -> Result<()> {
     cleanup_tenant(&pool, &tenant_name).await?;
 
     let tenant = tenant_ops.create(CreateTenantInput { tenant_name: tenant_name.clone() }).await?;
-    let backend = TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id);
+    let backend = TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id).await?;
 
     backend.create_file("/delete_me.txt", 0o644).await?;
     backend.write_file("/delete_me.txt", 0, b"data").await?;
@@ -179,7 +179,7 @@ async fn test_backend_create_and_list_directory() -> Result<()> {
     cleanup_tenant(&pool, &tenant_name).await?;
 
     let tenant = tenant_ops.create(CreateTenantInput { tenant_name: tenant_name.clone() }).await?;
-    let backend = TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id);
+    let backend = TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id).await?;
 
     let dir_attr = backend.create_dir("/testdir", 0o755).await?;
     assert_eq!(dir_attr.kind, FileType::Directory);
@@ -202,7 +202,7 @@ async fn test_backend_read_directory() -> Result<()> {
     cleanup_tenant(&pool, &tenant_name).await?;
 
     let tenant = tenant_ops.create(CreateTenantInput { tenant_name: tenant_name.clone() }).await?;
-    let backend = TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id);
+    let backend = TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id).await?;
 
     backend.create_dir("/parent", 0o755).await?;
     backend.create_file("/parent/file1.txt", 0o644).await?;
@@ -239,7 +239,7 @@ async fn test_backend_remove_directory() -> Result<()> {
     cleanup_tenant(&pool, &tenant_name).await?;
 
     let tenant = tenant_ops.create(CreateTenantInput { tenant_name: tenant_name.clone() }).await?;
-    let backend = TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id);
+    let backend = TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id).await?;
 
     backend.create_dir("/emptydir", 0o755).await?;
     backend.remove_dir("/emptydir").await?;
@@ -260,7 +260,7 @@ async fn test_backend_setattr_mode() -> Result<()> {
     cleanup_tenant(&pool, &tenant_name).await?;
 
     let tenant = tenant_ops.create(CreateTenantInput { tenant_name: tenant_name.clone() }).await?;
-    let backend = TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id);
+    let backend = TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id).await?;
 
     backend.create_file("/chmod.txt", 0o644).await?;
 
@@ -287,7 +287,7 @@ async fn test_backend_setattr_size() -> Result<()> {
     cleanup_tenant(&pool, &tenant_name).await?;
 
     let tenant = tenant_ops.create(CreateTenantInput { tenant_name: tenant_name.clone() }).await?;
-    let backend = TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id);
+    let backend = TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id).await?;
 
     backend.create_file("/truncate_via_setattr.txt", 0o644).await?;
     backend.write_file("/truncate_via_setattr.txt", 0, b"Long content").await?;
@@ -314,7 +314,7 @@ async fn test_backend_setattr_uid_gid() -> Result<()> {
     cleanup_tenant(&pool, &tenant_name).await?;
 
     let tenant = tenant_ops.create(CreateTenantInput { tenant_name: tenant_name.clone() }).await?;
-    let backend = TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id);
+    let backend = TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id).await?;
 
     backend.create_file("/chown.txt", 0o644).await?;
 
@@ -345,7 +345,7 @@ async fn test_backend_large_file() -> Result<()> {
     cleanup_tenant(&pool, &tenant_name).await?;
 
     let tenant = tenant_ops.create(CreateTenantInput { tenant_name: tenant_name.clone() }).await?;
-    let backend = TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id);
+    let backend = TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id).await?;
 
     backend.create_file("/large.bin", 0o644).await?;
 

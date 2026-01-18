@@ -159,7 +159,7 @@ async fn main() -> Result<()> {
         Commands::Mkdir { path } => {
             let tenant_id = get_tenant_id(&config, &cli.tenant).await?;
             let pool = DatabasePool::new(&config).await?;
-            let fs = FileSystem::new(pool.pool(), tenant_id);
+            let fs = FileSystem::new(pool.pool(), tenant_id).await?;
             fs.create_directory(&path).await?;
             println!("Created directory: {}", path);
             Ok(())
@@ -167,7 +167,7 @@ async fn main() -> Result<()> {
         Commands::Ls { path } => {
             let tenant_id = get_tenant_id(&config, &cli.tenant).await?;
             let pool = DatabasePool::new(&config).await?;
-            let fs = FileSystem::new(pool.pool(), tenant_id);
+            let fs = FileSystem::new(pool.pool(), tenant_id).await?;
             let entries = fs.list_directory(&path).await?;
             for entry in entries {
                 let suffix = if entry.inode_type == InodeType::Dir { "/" } else { "" };
@@ -178,7 +178,7 @@ async fn main() -> Result<()> {
         Commands::Rmdir { path } => {
             let tenant_id = get_tenant_id(&config, &cli.tenant).await?;
             let pool = DatabasePool::new(&config).await?;
-            let fs = FileSystem::new(pool.pool(), tenant_id);
+            let fs = FileSystem::new(pool.pool(), tenant_id).await?;
             fs.remove_directory(&path).await?;
             println!("Removed directory: {}", path);
             Ok(())
@@ -186,7 +186,7 @@ async fn main() -> Result<()> {
         Commands::Touch { path } => {
             let tenant_id = get_tenant_id(&config, &cli.tenant).await?;
             let pool = DatabasePool::new(&config).await?;
-            let fs = FileSystem::new(pool.pool(), tenant_id);
+            let fs = FileSystem::new(pool.pool(), tenant_id).await?;
             fs.create_file(&path).await?;
             println!("Created file: {}", path);
             Ok(())
@@ -194,7 +194,7 @@ async fn main() -> Result<()> {
         Commands::Write { path, content } => {
             let tenant_id = get_tenant_id(&config, &cli.tenant).await?;
             let pool = DatabasePool::new(&config).await?;
-            let fs = FileSystem::new(pool.pool(), tenant_id);
+            let fs = FileSystem::new(pool.pool(), tenant_id).await?;
             fs.write_file(&path, content.as_bytes()).await?;
             println!("Wrote {} bytes to {}", content.len(), path);
             Ok(())
@@ -202,7 +202,7 @@ async fn main() -> Result<()> {
         Commands::Cat { path } => {
             let tenant_id = get_tenant_id(&config, &cli.tenant).await?;
             let pool = DatabasePool::new(&config).await?;
-            let fs = FileSystem::new(pool.pool(), tenant_id);
+            let fs = FileSystem::new(pool.pool(), tenant_id).await?;
             let data = fs.read_file(&path).await?;
             let content = String::from_utf8_lossy(&data);
             print!("{}", content);
@@ -211,7 +211,7 @@ async fn main() -> Result<()> {
         Commands::Rm { path } => {
             let tenant_id = get_tenant_id(&config, &cli.tenant).await?;
             let pool = DatabasePool::new(&config).await?;
-            let fs = FileSystem::new(pool.pool(), tenant_id);
+            let fs = FileSystem::new(pool.pool(), tenant_id).await?;
             fs.delete_file(&path).await?;
             println!("Removed file: {}", path);
             Ok(())
@@ -219,7 +219,7 @@ async fn main() -> Result<()> {
         Commands::Stat { path } => {
             let tenant_id = get_tenant_id(&config, &cli.tenant).await?;
             let pool = DatabasePool::new(&config).await?;
-            let fs = FileSystem::new(pool.pool(), tenant_id);
+            let fs = FileSystem::new(pool.pool(), tenant_id).await?;
             let inode = fs.stat(&path).await?;
             println!("  File: {}", path);
             println!("  Size: {}", inode.size);

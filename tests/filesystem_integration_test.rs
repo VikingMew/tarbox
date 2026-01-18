@@ -34,7 +34,7 @@ async fn test_resolve_root_path() -> Result<()> {
     cleanup_tenant(&pool, &tenant_name).await?;
 
     let tenant = tenant_ops.create(CreateTenantInput { tenant_name: tenant_name.clone() }).await?;
-    let fs = FileSystem::new(pool.pool(), tenant.tenant_id);
+    let fs = FileSystem::new(pool.pool(), tenant.tenant_id).await?;
 
     let root = fs.resolve_path("/").await?;
     assert_eq!(root.name, "/");
@@ -53,7 +53,7 @@ async fn test_create_and_resolve_directory() -> Result<()> {
     cleanup_tenant(&pool, &tenant_name).await?;
 
     let tenant = tenant_ops.create(CreateTenantInput { tenant_name: tenant_name.clone() }).await?;
-    let fs = FileSystem::new(pool.pool(), tenant.tenant_id);
+    let fs = FileSystem::new(pool.pool(), tenant.tenant_id).await?;
 
     let dir = fs.create_directory("/test_dir").await?;
     assert_eq!(dir.name, "test_dir");
@@ -75,7 +75,7 @@ async fn test_create_nested_directories() -> Result<()> {
     cleanup_tenant(&pool, &tenant_name).await?;
 
     let tenant = tenant_ops.create(CreateTenantInput { tenant_name: tenant_name.clone() }).await?;
-    let fs = FileSystem::new(pool.pool(), tenant.tenant_id);
+    let fs = FileSystem::new(pool.pool(), tenant.tenant_id).await?;
 
     fs.create_directory("/parent").await?;
     let child = fs.create_directory("/parent/child").await?;
@@ -98,7 +98,7 @@ async fn test_create_directory_already_exists() -> Result<()> {
     cleanup_tenant(&pool, &tenant_name).await?;
 
     let tenant = tenant_ops.create(CreateTenantInput { tenant_name: tenant_name.clone() }).await?;
-    let fs = FileSystem::new(pool.pool(), tenant.tenant_id);
+    let fs = FileSystem::new(pool.pool(), tenant.tenant_id).await?;
 
     fs.create_directory("/duplicate").await?;
     let result = fs.create_directory("/duplicate").await;
@@ -119,7 +119,7 @@ async fn test_list_directory() -> Result<()> {
     cleanup_tenant(&pool, &tenant_name).await?;
 
     let tenant = tenant_ops.create(CreateTenantInput { tenant_name: tenant_name.clone() }).await?;
-    let fs = FileSystem::new(pool.pool(), tenant.tenant_id);
+    let fs = FileSystem::new(pool.pool(), tenant.tenant_id).await?;
 
     fs.create_directory("/dir1").await?;
     fs.create_directory("/dir2").await?;
@@ -146,7 +146,7 @@ async fn test_remove_empty_directory() -> Result<()> {
     cleanup_tenant(&pool, &tenant_name).await?;
 
     let tenant = tenant_ops.create(CreateTenantInput { tenant_name: tenant_name.clone() }).await?;
-    let fs = FileSystem::new(pool.pool(), tenant.tenant_id);
+    let fs = FileSystem::new(pool.pool(), tenant.tenant_id).await?;
 
     fs.create_directory("/empty_dir").await?;
     fs.remove_directory("/empty_dir").await?;
@@ -168,7 +168,7 @@ async fn test_remove_non_empty_directory_fails() -> Result<()> {
     cleanup_tenant(&pool, &tenant_name).await?;
 
     let tenant = tenant_ops.create(CreateTenantInput { tenant_name: tenant_name.clone() }).await?;
-    let fs = FileSystem::new(pool.pool(), tenant.tenant_id);
+    let fs = FileSystem::new(pool.pool(), tenant.tenant_id).await?;
 
     fs.create_directory("/parent").await?;
     fs.create_file("/parent/child.txt").await?;
@@ -190,7 +190,7 @@ async fn test_create_and_read_file() -> Result<()> {
     cleanup_tenant(&pool, &tenant_name).await?;
 
     let tenant = tenant_ops.create(CreateTenantInput { tenant_name: tenant_name.clone() }).await?;
-    let fs = FileSystem::new(pool.pool(), tenant.tenant_id);
+    let fs = FileSystem::new(pool.pool(), tenant.tenant_id).await?;
 
     let file = fs.create_file("/test.txt").await?;
     assert_eq!(file.name, "test.txt");
@@ -211,7 +211,7 @@ async fn test_write_and_read_file() -> Result<()> {
     cleanup_tenant(&pool, &tenant_name).await?;
 
     let tenant = tenant_ops.create(CreateTenantInput { tenant_name: tenant_name.clone() }).await?;
-    let fs = FileSystem::new(pool.pool(), tenant.tenant_id);
+    let fs = FileSystem::new(pool.pool(), tenant.tenant_id).await?;
 
     fs.create_file("/data.txt").await?;
 
@@ -234,7 +234,7 @@ async fn test_write_large_file() -> Result<()> {
     cleanup_tenant(&pool, &tenant_name).await?;
 
     let tenant = tenant_ops.create(CreateTenantInput { tenant_name: tenant_name.clone() }).await?;
-    let fs = FileSystem::new(pool.pool(), tenant.tenant_id);
+    let fs = FileSystem::new(pool.pool(), tenant.tenant_id).await?;
 
     fs.create_file("/large.bin").await?;
 
@@ -259,7 +259,7 @@ async fn test_overwrite_file() -> Result<()> {
     cleanup_tenant(&pool, &tenant_name).await?;
 
     let tenant = tenant_ops.create(CreateTenantInput { tenant_name: tenant_name.clone() }).await?;
-    let fs = FileSystem::new(pool.pool(), tenant.tenant_id);
+    let fs = FileSystem::new(pool.pool(), tenant.tenant_id).await?;
 
     fs.create_file("/overwrite.txt").await?;
 
@@ -284,7 +284,7 @@ async fn test_delete_file() -> Result<()> {
     cleanup_tenant(&pool, &tenant_name).await?;
 
     let tenant = tenant_ops.create(CreateTenantInput { tenant_name: tenant_name.clone() }).await?;
-    let fs = FileSystem::new(pool.pool(), tenant.tenant_id);
+    let fs = FileSystem::new(pool.pool(), tenant.tenant_id).await?;
 
     fs.create_file("/delete_me.txt").await?;
     fs.write_file("/delete_me.txt", b"Some data").await?;
@@ -308,7 +308,7 @@ async fn test_stat_file() -> Result<()> {
     cleanup_tenant(&pool, &tenant_name).await?;
 
     let tenant = tenant_ops.create(CreateTenantInput { tenant_name: tenant_name.clone() }).await?;
-    let fs = FileSystem::new(pool.pool(), tenant.tenant_id);
+    let fs = FileSystem::new(pool.pool(), tenant.tenant_id).await?;
 
     fs.create_file("/stat_me.txt").await?;
     let test_data = b"Test data for stat";
@@ -331,7 +331,7 @@ async fn test_chmod() -> Result<()> {
     cleanup_tenant(&pool, &tenant_name).await?;
 
     let tenant = tenant_ops.create(CreateTenantInput { tenant_name: tenant_name.clone() }).await?;
-    let fs = FileSystem::new(pool.pool(), tenant.tenant_id);
+    let fs = FileSystem::new(pool.pool(), tenant.tenant_id).await?;
 
     fs.create_file("/chmod_test.txt").await?;
 
@@ -356,7 +356,7 @@ async fn test_chown() -> Result<()> {
     cleanup_tenant(&pool, &tenant_name).await?;
 
     let tenant = tenant_ops.create(CreateTenantInput { tenant_name: tenant_name.clone() }).await?;
-    let fs = FileSystem::new(pool.pool(), tenant.tenant_id);
+    let fs = FileSystem::new(pool.pool(), tenant.tenant_id).await?;
 
     fs.create_file("/chown_test.txt").await?;
 
@@ -379,7 +379,7 @@ async fn test_path_not_found() -> Result<()> {
     cleanup_tenant(&pool, &tenant_name).await?;
 
     let tenant = tenant_ops.create(CreateTenantInput { tenant_name: tenant_name.clone() }).await?;
-    let fs = FileSystem::new(pool.pool(), tenant.tenant_id);
+    let fs = FileSystem::new(pool.pool(), tenant.tenant_id).await?;
 
     let result = fs.resolve_path("/nonexistent/path").await;
     assert!(result.is_err());
@@ -398,7 +398,7 @@ async fn test_create_file_in_nonexistent_directory() -> Result<()> {
     cleanup_tenant(&pool, &tenant_name).await?;
 
     let tenant = tenant_ops.create(CreateTenantInput { tenant_name: tenant_name.clone() }).await?;
-    let fs = FileSystem::new(pool.pool(), tenant.tenant_id);
+    let fs = FileSystem::new(pool.pool(), tenant.tenant_id).await?;
 
     let result = fs.create_file("/nonexistent/file.txt").await;
     assert!(result.is_err());
@@ -417,7 +417,7 @@ async fn test_write_to_directory_fails() -> Result<()> {
     cleanup_tenant(&pool, &tenant_name).await?;
 
     let tenant = tenant_ops.create(CreateTenantInput { tenant_name: tenant_name.clone() }).await?;
-    let fs = FileSystem::new(pool.pool(), tenant.tenant_id);
+    let fs = FileSystem::new(pool.pool(), tenant.tenant_id).await?;
 
     fs.create_directory("/testdir").await?;
 
@@ -438,7 +438,7 @@ async fn test_read_directory_fails() -> Result<()> {
     cleanup_tenant(&pool, &tenant_name).await?;
 
     let tenant = tenant_ops.create(CreateTenantInput { tenant_name: tenant_name.clone() }).await?;
-    let fs = FileSystem::new(pool.pool(), tenant.tenant_id);
+    let fs = FileSystem::new(pool.pool(), tenant.tenant_id).await?;
 
     fs.create_directory("/testdir").await?;
 
@@ -459,7 +459,7 @@ async fn test_delete_directory_as_file_fails() -> Result<()> {
     cleanup_tenant(&pool, &tenant_name).await?;
 
     let tenant = tenant_ops.create(CreateTenantInput { tenant_name: tenant_name.clone() }).await?;
-    let fs = FileSystem::new(pool.pool(), tenant.tenant_id);
+    let fs = FileSystem::new(pool.pool(), tenant.tenant_id).await?;
 
     fs.create_directory("/testdir").await?;
 
