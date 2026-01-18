@@ -3,9 +3,7 @@
 // Provides functions to mount and unmount Tarbox filesystems via FUSE.
 
 use super::{FuseAdapter, TarboxBackend};
-use crate::types::TenantId;
 use anyhow::{Context, Result};
-use sqlx::PgPool;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::runtime::Handle;
@@ -73,16 +71,14 @@ impl MountOptions {
 /// Mount a Tarbox filesystem via FUSE
 ///
 /// # Arguments
-/// * `pool` - Database connection pool
-/// * `tenant_id` - Tenant ID to mount
+/// * `backend` - Pre-created TarboxBackend instance
 /// * `mountpoint` - Directory to mount at
 /// * `options` - Mount options
 ///
 /// # Returns
 /// A session handle that keeps the filesystem mounted until dropped
 pub fn mount(
-    pool: Arc<PgPool>,
-    tenant_id: TenantId,
+    backend: Arc<TarboxBackend>,
     mountpoint: impl AsRef<Path>,
     options: MountOptions,
 ) -> Result<fuser::BackgroundSession> {
@@ -97,13 +93,6 @@ pub fn mount(
         anyhow::bail!("Mount point is not a directory: {}", mountpoint.display());
     }
 
-    // Create backend - use spawn_blocking for compatibility with both single and multi-threaded runtimes
-    let pool_clone = pool.clone();
-    let backend = Arc::new(
-        Handle::current()
-            .block_on(async move { TarboxBackend::new(pool_clone, tenant_id).await })?,
-    );
-
     // Get current runtime handle
     let runtime = Handle::current();
 
@@ -113,11 +102,7 @@ pub fn mount(
     // Convert mount options
     let fuser_options = options.to_fuser_options();
 
-    tracing::info!(
-        "Mounting Tarbox filesystem for tenant {} at {}",
-        tenant_id,
-        mountpoint.display()
-    );
+    tracing::info!("Mounting Tarbox filesystem at {}", mountpoint.display());
 
     // Mount filesystem in background
     let session = fuser::spawn_mount2(adapter, mountpoint, &fuser_options)

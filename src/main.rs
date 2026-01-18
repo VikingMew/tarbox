@@ -248,8 +248,11 @@ async fn main() -> Result<()> {
             println!("Tenant: {}", cli.tenant.as_ref().unwrap());
             println!("Press Ctrl+C to unmount");
 
-            let _session =
-                mount(Arc::new(pool.pool().clone()), tenant_id, &mountpoint, mount_options)?;
+            let backend = Arc::new(
+                tarbox::fuse::backend::TarboxBackend::new(Arc::new(pool.pool().clone()), tenant_id)
+                    .await?,
+            );
+            let _session = mount(backend, &mountpoint, mount_options)?;
 
             // Keep the process running until Ctrl+C
             tokio::signal::ctrl_c().await?;

@@ -6,6 +6,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::sync::Arc;
 use tarbox::config::DatabaseConfig;
+use tarbox::fuse::backend::TarboxBackend;
 use tarbox::fuse::mount::{MountOptions, mount, unmount};
 use tarbox::storage::{CreateTenantInput, DatabasePool, TenantOperations, TenantRepository};
 use tempfile::TempDir;
@@ -53,7 +54,10 @@ async fn test_mount_and_unmount() -> Result<()> {
         auto_unmount: true,
     };
 
-    let session = mount(Arc::new(pool.pool().clone()), tenant.tenant_id, &mount_path, options)?;
+    let backend = Arc::new(TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id).await?);
+
+
+    let session = mount(backend, &mount_path, options)?;
 
     // Wait a bit for mount to complete
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
@@ -85,7 +89,9 @@ async fn test_fuse_create_file() -> Result<()> {
     let mount_path = mountpoint.path().to_path_buf();
 
     let options = MountOptions::default();
-    let session = mount(Arc::new(pool.pool().clone()), tenant.tenant_id, &mount_path, options)?;
+    let backend = Arc::new(TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id).await?);
+
+    let session = mount(backend, &mount_path, options)?;
 
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
@@ -117,7 +123,9 @@ async fn test_fuse_write_and_read() -> Result<()> {
     let mount_path = mountpoint.path().to_path_buf();
 
     let options = MountOptions::default();
-    let session = mount(Arc::new(pool.pool().clone()), tenant.tenant_id, &mount_path, options)?;
+    let backend = Arc::new(TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id).await?);
+
+    let session = mount(backend, &mount_path, options)?;
 
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
@@ -156,7 +164,9 @@ async fn test_fuse_mkdir_and_readdir() -> Result<()> {
     let mount_path = mountpoint.path().to_path_buf();
 
     let options = MountOptions::default();
-    let session = mount(Arc::new(pool.pool().clone()), tenant.tenant_id, &mount_path, options)?;
+    let backend = Arc::new(TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id).await?);
+
+    let session = mount(backend, &mount_path, options)?;
 
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
@@ -198,7 +208,9 @@ async fn test_fuse_delete_file() -> Result<()> {
     let mount_path = mountpoint.path().to_path_buf();
 
     let options = MountOptions::default();
-    let session = mount(Arc::new(pool.pool().clone()), tenant.tenant_id, &mount_path, options)?;
+    let backend = Arc::new(TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id).await?);
+
+    let session = mount(backend, &mount_path, options)?;
 
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
@@ -231,7 +243,9 @@ async fn test_fuse_metadata() -> Result<()> {
     let mount_path = mountpoint.path().to_path_buf();
 
     let options = MountOptions::default();
-    let session = mount(Arc::new(pool.pool().clone()), tenant.tenant_id, &mount_path, options)?;
+    let backend = Arc::new(TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id).await?);
+
+    let session = mount(backend, &mount_path, options)?;
 
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
@@ -267,7 +281,9 @@ async fn test_fuse_chmod() -> Result<()> {
     let mount_path = mountpoint.path().to_path_buf();
 
     let options = MountOptions::default();
-    let session = mount(Arc::new(pool.pool().clone()), tenant.tenant_id, &mount_path, options)?;
+    let backend = Arc::new(TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id).await?);
+
+    let session = mount(backend, &mount_path, options)?;
 
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
@@ -307,7 +323,9 @@ async fn test_fuse_nested_directories() -> Result<()> {
     let mount_path = mountpoint.path().to_path_buf();
 
     let options = MountOptions::default();
-    let session = mount(Arc::new(pool.pool().clone()), tenant.tenant_id, &mount_path, options)?;
+    let backend = Arc::new(TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id).await?);
+
+    let session = mount(backend, &mount_path, options)?;
 
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
@@ -341,7 +359,9 @@ async fn test_fuse_large_file() -> Result<()> {
     let mount_path = mountpoint.path().to_path_buf();
 
     let options = MountOptions::default();
-    let session = mount(Arc::new(pool.pool().clone()), tenant.tenant_id, &mount_path, options)?;
+    let backend = Arc::new(TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id).await?);
+
+    let session = mount(backend, &mount_path, options)?;
 
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
@@ -382,7 +402,9 @@ async fn test_fuse_rename() -> Result<()> {
     let mount_path = mountpoint.path().to_path_buf();
 
     let options = MountOptions::default();
-    let session = mount(Arc::new(pool.pool().clone()), tenant.tenant_id, &mount_path, options)?;
+    let backend = Arc::new(TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id).await?);
+
+    let session = mount(backend, &mount_path, options)?;
 
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
@@ -427,7 +449,9 @@ async fn test_fuse_rmdir() -> Result<()> {
     let mount_path = mountpoint.path().to_path_buf();
 
     let options = MountOptions::default();
-    let session = mount(Arc::new(pool.pool().clone()), tenant.tenant_id, &mount_path, options)?;
+    let backend = Arc::new(TarboxBackend::new(Arc::new(pool.pool().clone()), tenant.tenant_id).await?);
+
+    let session = mount(backend, &mount_path, options)?;
 
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
