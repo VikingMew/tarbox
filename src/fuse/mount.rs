@@ -97,10 +97,12 @@ pub fn mount(
         anyhow::bail!("Mount point is not a directory: {}", mountpoint.display());
     }
 
-    // Create backend (use block_in_place to call async in sync context)
-    let backend = Arc::new(tokio::task::block_in_place(|| {
-        Handle::current().block_on(TarboxBackend::new(pool.clone(), tenant_id))
-    })?);
+    // Create backend - use spawn_blocking for compatibility with both single and multi-threaded runtimes
+    let pool_clone = pool.clone();
+    let backend = Arc::new(
+        Handle::current()
+            .block_on(async move { TarboxBackend::new(pool_clone, tenant_id).await })?,
+    );
 
     // Get current runtime handle
     let runtime = Handle::current();
