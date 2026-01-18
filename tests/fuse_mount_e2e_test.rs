@@ -14,7 +14,7 @@ use tempfile::TempDir;
 async fn setup_test_db() -> Result<DatabasePool> {
     let config = DatabaseConfig {
         url: std::env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/tarbox_test".into()),
+            .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/tarbox".into()),
         max_connections: 5,
         min_connections: 1,
     };
@@ -50,7 +50,7 @@ async fn test_mount_and_unmount() -> Result<()> {
         allow_other: false,
         allow_root: false,
         read_only: false,
-        fsname: Some("tarbox_test".to_string()),
+        fsname: Some("tarbox".to_string()),
         auto_unmount: true,
     };
 

@@ -4,44 +4,28 @@ This guide explains how to use the provided `docker-compose.yml` for Tarbox deve
 
 ## Services Overview
 
-The Docker Compose configuration provides four services:
+The Docker Compose configuration provides three services:
 
-- **postgres**: Main PostgreSQL database for development
-- **postgres-test**: Separate PostgreSQL database for running tests
+- **postgres**: PostgreSQL database for development and testing
 - **tarbox-cli**: Pre-built Tarbox CLI container for manual testing
 - **pgadmin**: Optional web-based PostgreSQL administration tool
 
 ## Quick Start
 
-### Start Development Database
+### Start Database
 
 ```bash
-# Start only the main PostgreSQL database
+# Start the PostgreSQL database
 docker-compose up -d postgres
 
 # Verify it's running
 docker-compose ps
 ```
 
-The main database will be available at `localhost:5432` with:
+The database will be available at `localhost:5432` with:
 - Database: `tarbox`
-- Username: `tarbox`
-- Password: `tarbox123`
-
-### Start Test Database
-
-```bash
-# Start the test database (required for E2E tests)
-docker-compose up -d postgres-test
-
-# Verify it's running
-docker-compose ps
-```
-
-The test database will be available at `localhost:5433` with:
-- Database: `tarbox_test`
-- Username: `tarbox_test`
-- Password: `test123`
+- Username: `postgres`
+- Password: `postgres`
 
 ## Running Tests
 
@@ -59,22 +43,24 @@ cargo test --lib
 cargo test
 ```
 
-### E2E Tests (Requires Test Database)
+### E2E Tests (Requires Database)
 
 ```bash
-# Start test database
-docker-compose up -d postgres-test
+# Start database
+docker-compose up -d postgres
 
 # Wait for database to be ready (about 5 seconds)
 sleep 5
 
 # Run all tests including E2E
-DATABASE_URL=postgres://tarbox_test:test123@localhost:5433/tarbox_test cargo test --all-targets
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/tarbox cargo test --all-targets
 
 # Or use the environment variable
-export DATABASE_URL=postgres://tarbox_test:test123@localhost:5433/tarbox_test
+export DATABASE_URL=postgres://postgres:postgres@localhost:5432/tarbox
 cargo test --all-targets
 ```
+
+**Note**: E2E tests will create and clean up test data in the same database. Tables are isolated by tenant_id.
 
 ## Using the CLI Container
 
@@ -92,11 +78,11 @@ docker-compose exec tarbox-cli tarbox tenant list
 docker-compose exec tarbox-cli bash
 ```
 
-**Note**: The CLI container connects to the main `postgres` service automatically via Docker networking.
+**Note**: The CLI container connects to the `postgres` service automatically via Docker networking.
 
 ## Database Administration with pgAdmin
 
-pgAdmin is an optional web-based tool for inspecting and managing the PostgreSQL databases.
+pgAdmin is an optional web-based tool for inspecting and managing the PostgreSQL database.
 
 ### Start pgAdmin
 
@@ -106,39 +92,29 @@ docker-compose --profile tools up -d pgadmin
 
 # Access at http://localhost:5050
 # Email: admin@tarbox.local
-# Password: admin123
+# Password: admin
 ```
 
-### Connect to Databases in pgAdmin
+### Connect to Database in pgAdmin
 
 1. Open http://localhost:5050 in your browser
 2. Login with credentials above
 3. Right-click "Servers" → "Register" → "Server"
 4. Configure connection:
 
-**Main Database:**
+**Database Connection:**
 - Name: Tarbox Dev
 - Host: postgres
 - Port: 5432
 - Database: tarbox
-- Username: tarbox
-- Password: tarbox123
-
-**Test Database:**
-- Name: Tarbox Test
-- Host: postgres-test
-- Port: 5432
-- Database: tarbox_test
-- Username: tarbox_test
-- Password: test123
+- Username: postgres
+- Password: postgres
 
 ## Data Persistence
 
-Database data is stored in Docker volumes:
+Database data is stored in a Docker volume:
 
-- `postgres_data`: Main database data
-- `postgres_test_data`: Test database data
-- `pgadmin_data`: pgAdmin settings and connections
+- `postgres_data`: Database data (persists across container restarts)
 
 ### Clear Database Data
 
@@ -149,9 +125,8 @@ docker-compose down
 # Remove volumes to clear all data
 docker-compose down -v
 
-# Or remove specific volumes
+# Or remove specific volume
 docker volume rm tarbox_postgres_data
-docker volume rm tarbox_postgres_test_data
 ```
 
 ## Common Workflows
@@ -159,7 +134,7 @@ docker volume rm tarbox_postgres_test_data
 ### Development Workflow
 
 ```bash
-# 1. Start development database
+# 1. Start database
 docker-compose up -d postgres
 
 # 2. Build and test locally
@@ -178,11 +153,11 @@ docker-compose down
 ### Testing Workflow
 
 ```bash
-# 1. Start test database
-docker-compose up -d postgres-test
+# 1. Start database
+docker-compose up -d postgres
 
 # 2. Run full test suite
-export DATABASE_URL=postgres://tarbox_test:test123@localhost:5433/tarbox_test
+export DATABASE_URL=postgres://postgres:postgres@localhost:5432/tarbox
 cargo test --all-targets
 
 # 3. Check coverage
@@ -227,30 +202,29 @@ docker-compose restart postgres
 
 ### Port Conflicts
 
-If ports 5432 or 5433 are already in use:
+If port 5432 is already in use:
 
 ```bash
 # Check what's using the port
 sudo lsof -i :5432
-sudo lsof -i :5433
 
 # Option 1: Stop conflicting service
 sudo systemctl stop postgresql
 
-# Option 2: Change ports in docker-compose.yml
+# Option 2: Change port in docker-compose.yml
 # Edit the ports mapping:
 # postgres:
 #   ports:
 #     - "15432:5432"  # Use different host port
 ```
 
-### Test Database Not Initialized
+### Database Not Initialized
 
 ```bash
-# Recreate test database
-docker-compose down postgres-test
-docker volume rm tarbox_postgres_test_data
-docker-compose up -d postgres-test
+# Recreate database
+docker-compose down postgres
+docker volume rm tarbox_postgres_data
+docker-compose up -d postgres
 
 # Wait for initialization
 sleep 10
@@ -274,7 +248,6 @@ You can customize the configuration using environment variables:
 # Create .env file in project root
 cat > .env << EOF
 POSTGRES_PASSWORD=my_secure_password
-POSTGRES_TEST_PASSWORD=my_test_password
 PGADMIN_EMAIL=me@example.com
 PGADMIN_PASSWORD=my_admin_password
 EOF

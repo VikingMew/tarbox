@@ -46,7 +46,7 @@ jobs:
         image: postgres:16
         env:
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: tarbox_test
+          POSTGRES_DB: tarbox
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -98,7 +98,7 @@ jobs:
 
       - name: Run database migrations
         env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/tarbox_test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/tarbox
         run: |
           cargo install sqlx-cli --no-default-features --features postgres
           sqlx database create || true
@@ -110,29 +110,29 @@ jobs:
       - name: Run E2E tests - FileSystem integration
         run: cargo test --test filesystem_integration_test --verbose
         env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/tarbox_test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/tarbox
 
       - name: Run E2E tests - FuseBackend integration
         run: cargo test --test fuse_backend_integration_test --verbose
         env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/tarbox_test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/tarbox
 
       - name: Run E2E tests - Storage
         run: cargo test --test storage_e2e_test --verbose
         env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/tarbox_test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/tarbox
 
       - name: Run FUSE mount E2E tests
-        run: sudo -E DATABASE_URL="postgres://postgres:postgres@localhost:5432/tarbox_test" $(which cargo) test --test fuse_mount_e2e_test --verbose -- --ignored --test-threads=1
+        run: sudo -E DATABASE_URL="postgres://postgres:postgres@localhost:5432/tarbox" $(which cargo) test --test fuse_mount_e2e_test --verbose -- --ignored --test-threads=1
         env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/tarbox_test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/tarbox
 
       - name: Install llvm-cov
         run: cargo install cargo-llvm-cov
 
       - name: Generate coverage report
         env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/tarbox_test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/tarbox
         run: |
           cargo llvm-cov clean
           cargo llvm-cov --lib --test filesystem_integration_test --test fuse_backend_integration_test --test storage_e2e_test

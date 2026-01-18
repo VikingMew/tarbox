@@ -7,7 +7,7 @@ use tarbox::storage::{CreateTenantInput, DatabasePool, TenantOperations, TenantR
 async fn setup_test_db() -> Result<DatabasePool> {
     let config = DatabaseConfig {
         url: std::env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/tarbox_test".into()),
+            .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/tarbox".into()),
         max_connections: 5,
         min_connections: 1,
     };
