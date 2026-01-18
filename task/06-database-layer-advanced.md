@@ -2,9 +2,13 @@
 
 ## 目标
 
-在 Task 02 (MVP核心) 的基础上，实现高级存储特性，包括分层、文本优化、审计日志、原生挂载配置等。
+在 Task 02 (MVP核心) 的基础上，实现高级存储特性，包括：
+- **审计日志系统**: 完整的操作审计和分区管理
+- **分层存储表**: 支持 Docker 风格的层管理
+- **文本文件优化**: 行级存储和内容寻址
+- **高级存储特性**: 连接池、事务、性能优化
 
-**注意**: Task 02 已实现 spec/01 (MVP核心: tenants, inodes, data_blocks)，本任务实现 spec/01-advanced 的高级特性。
+**注意**: Task 02 已实现 spec/01 (MVP核心: tenants, inodes, data_blocks)，本任务实现高级数据库功能。
 
 ## 优先级
 
@@ -17,11 +21,12 @@
 
 ## 依赖的Spec
 
-- **spec/16-advanced-storage.md** - 高级存储特性（核心）
-- spec/03-audit-system.md - 审计系统设计
-- spec/04-layered-filesystem.md - 分层文件系统
-- spec/10-text-file-optimization.md - 文本文件优化
-- spec/07-performance.md - 性能优化（包含原生挂载配置）
+- **spec/03-audit-system.md** - 审计日志表、分区策略、异步批量写入（核心）
+- **spec/04-layered-filesystem.md** - layers、layer_entries 表设计（核心）
+- **spec/10-text-file-optimization.md** - text_blocks、text_file_metadata、text_line_map 表设计（核心）
+- **spec/16-advanced-storage.md** - 连接池、事务、性能优化策略（核心）
+- spec/07-performance.md - 查询优化、索引策略
+- spec/01-database-schema.md - MVP 表作为基础
 
 ## 子任务
 

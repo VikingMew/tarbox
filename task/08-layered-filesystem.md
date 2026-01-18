@@ -2,7 +2,12 @@
 
 ## 目标
 
-实现类似 Docker 镜像层的分层文件系统，支持写时复制（COW）、检查点创建、层间切换、历史回溯等功能。
+实现类似 Docker 镜像层的分层文件系统，包括：
+- **写时复制（COW）**: 文件和目录的增量修改
+- **检查点管理**: 创建、命名、切换文件系统快照
+- **层间切换**: 在历史层间自由切换
+- **联合视图**: 多层文件的合并读取
+- **虚拟文件系统钩子**: `/.tarbox/layers/` 控制接口
 
 ## 优先级
 
@@ -10,10 +15,19 @@
 
 ## 依赖
 
-- Task 01: 项目初始化和基础设施搭建
-- Task 02: 数据库存储层实现
-- Task 03: 基础文件系统实现
-- Task 04: FUSE 接口实现
+- Task 01: 项目初始化和基础设施搭建 ✅
+- Task 02: 数据库存储层 MVP ✅
+- Task 03: 文件系统核心 MVP ✅
+- Task 05: FUSE 接口 ✅
+- Task 06: 数据库层高级功能（需要 layers、layer_entries 表）
+
+## 依赖的Spec
+
+- **spec/04-layered-filesystem.md** - 分层架构、COW 策略、层切换逻辑（核心）
+- **spec/08-filesystem-hooks.md** - `/.tarbox/` 虚拟目录设计和命令接口（核心）
+- **spec/10-text-file-optimization.md** - 文本文件的行级 COW 和 diff 算法
+- spec/03-audit-system.md - 层操作的审计日志记录
+- spec/14-filesystem-interface.md - FilesystemInterface 统一抽象
 
 ## 子任务
 

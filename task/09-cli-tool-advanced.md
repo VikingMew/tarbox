@@ -2,7 +2,12 @@
 
 ## 目标
 
-在 Task 04 (CLI 工具 MVP) 的基础上，实现完整的 CLI 工具，支持高级文件系统操作、层管理、审计查询、性能分析等功能。
+在 Task 04 (CLI 工具 MVP) 的基础上，实现完整的 CLI 工具，包括：
+- **高级文件操作**: 符号链接、硬链接、扩展属性、权限管理
+- **层管理命令**: 创建、切换、对比、导出层
+- **审计查询**: 操作历史、统计分析
+- **文本文件优化**: diff、合并、历史查看
+- **性能分析**: 存储使用、性能指标
 
 ## 优先级
 
@@ -11,10 +16,19 @@
 ## 依赖
 
 - Task 04: CLI 工具 MVP ✅
-- Task 05: FUSE 接口
+- Task 05: FUSE 接口 ✅
 - Task 06: 数据库层高级功能
 - Task 07: 文件系统核心高级功能
 - Task 08: 分层文件系统
+
+## 依赖的Spec
+
+- **spec/04-layered-filesystem.md** - 层管理命令设计
+- **spec/08-filesystem-hooks.md** - 虚拟目录命令接口（可作为 CLI 的补充或替代）
+- **spec/03-audit-system.md** - 审计日志查询和统计
+- **spec/10-text-file-optimization.md** - 文本文件 diff 和历史查看
+- spec/02-fuse-interface.md - 高级 POSIX 操作（symlink, xattr 等）
+- spec/07-performance.md - 性能指标和分析
 
 ## 子任务
 

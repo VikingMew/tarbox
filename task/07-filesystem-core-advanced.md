@@ -2,7 +2,12 @@
 
 ## 目标
 
-实现高级文件系统功能，包括符号链接、硬链接、扩展属性、文件锁等 POSIX 高级特性。
+实现高级文件系统功能，包括：
+- **符号链接和硬链接**: 完整的 POSIX 链接支持
+- **扩展属性**: 用户自定义元数据存储
+- **文件锁**: 并发控制和访问同步
+- **权限和 ACL**: 高级权限管理
+- **缓存层**: 提升性能的多级缓存
 
 ## 优先级
 
@@ -10,10 +15,19 @@
 
 ## 依赖
 
-- Task 01: 项目初始化和基础设施搭建
-- Task 02: 数据库存储层实现
-- Task 03: 基础文件系统实现 (MVP)
-- Task 05: FUSE 接口实现
+- Task 01: 项目初始化和基础设施搭建 ✅
+- Task 02: 数据库存储层 MVP ✅
+- Task 03: 文件系统核心 MVP ✅
+- Task 05: FUSE 接口 ✅
+- Task 06: 数据库层高级功能（需要扩展属性的数据库支持）
+
+## 依赖的Spec
+
+- **spec/02-fuse-interface.md** - POSIX 操作映射（symlink, link, xattr, flock）
+- **spec/07-performance.md** - 缓存策略、性能优化指南（核心）
+- **spec/14-filesystem-interface.md** - FilesystemInterface 抽象层
+- spec/01-database-schema.md - inodes 表结构（link_target, nlinks, xattrs 字段）
+- spec/10-text-file-optimization.md - 文本文件的特殊处理
 
 ## 子任务
 
