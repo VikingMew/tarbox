@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
-use crate::types::{BlockId, InodeId, TenantId};
+use crate::types::{BlockId, InodeId, LayerId, TenantId};
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Tenant {
@@ -82,6 +82,211 @@ pub struct CreateBlockInput {
     pub inode_id: InodeId,
     pub block_index: i32,
     pub data: Vec<u8>,
+}
+
+// ============================================================================
+// Audit Log Models
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct AuditLog {
+    pub log_id: i64,
+    pub tenant_id: TenantId,
+    pub inode_id: Option<InodeId>,
+    pub operation: String,
+    pub uid: i32,
+    pub gid: i32,
+    pub pid: Option<i32>,
+    pub path: String,
+    pub success: bool,
+    pub error_code: Option<i32>,
+    pub error_message: Option<String>,
+    pub bytes_read: Option<i64>,
+    pub bytes_written: Option<i64>,
+    pub duration_ms: Option<i32>,
+    pub text_changes: Option<serde_json::Value>,
+    pub is_native_mount: bool,
+    pub native_source_path: Option<String>,
+    pub metadata: Option<serde_json::Value>,
+    pub created_at: DateTime<Utc>,
+    pub log_date: chrono::NaiveDate,
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateAuditLogInput {
+    pub tenant_id: TenantId,
+    pub inode_id: Option<InodeId>,
+    pub operation: String,
+    pub uid: i32,
+    pub gid: i32,
+    pub pid: Option<i32>,
+    pub path: String,
+    pub success: bool,
+    pub error_code: Option<i32>,
+    pub error_message: Option<String>,
+    pub bytes_read: Option<i64>,
+    pub bytes_written: Option<i64>,
+    pub duration_ms: Option<i32>,
+    pub text_changes: Option<serde_json::Value>,
+    pub is_native_mount: bool,
+    pub native_source_path: Option<String>,
+    pub metadata: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone)]
+pub struct QueryAuditLogsInput {
+    pub tenant_id: TenantId,
+    pub start_time: Option<DateTime<Utc>>,
+    pub end_time: Option<DateTime<Utc>>,
+    pub operation: Option<String>,
+    pub uid: Option<i32>,
+    pub path_pattern: Option<String>,
+    pub success: Option<bool>,
+    pub limit: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditStats {
+    pub total_operations: i64,
+    pub successful_operations: i64,
+    pub failed_operations: i64,
+    pub total_bytes_read: i64,
+    pub total_bytes_written: i64,
+    pub avg_duration_ms: Option<f64>,
+}
+
+// ============================================================================
+// Layer Models
+// ============================================================================
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(type_name = "varchar", rename_all = "lowercase")]
+pub enum LayerStatus {
+    Active,
+    Creating,
+    Deleting,
+    Archived,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(type_name = "varchar", rename_all = "lowercase")]
+pub enum ChangeType {
+    Add,
+    Modify,
+    Delete,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct Layer {
+    pub layer_id: LayerId,
+    pub tenant_id: TenantId,
+    pub parent_layer_id: Option<LayerId>,
+    pub layer_name: String,
+    pub description: Option<String>,
+    pub file_count: i32,
+    pub total_size: i64,
+    pub status: LayerStatus,
+    pub is_readonly: bool,
+    pub tags: Option<serde_json::Value>,
+    pub created_at: DateTime<Utc>,
+    pub created_by: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateLayerInput {
+    pub tenant_id: TenantId,
+    pub parent_layer_id: Option<LayerId>,
+    pub layer_name: String,
+    pub description: Option<String>,
+    pub tags: Option<serde_json::Value>,
+    pub created_by: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct LayerEntry {
+    pub entry_id: uuid::Uuid,
+    pub layer_id: LayerId,
+    pub tenant_id: TenantId,
+    pub inode_id: InodeId,
+    pub path: String,
+    pub change_type: ChangeType,
+    pub size_delta: Option<i64>,
+    pub text_changes: Option<serde_json::Value>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateLayerEntryInput {
+    pub layer_id: LayerId,
+    pub tenant_id: TenantId,
+    pub inode_id: InodeId,
+    pub path: String,
+    pub change_type: ChangeType,
+    pub size_delta: Option<i64>,
+    pub text_changes: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct TenantCurrentLayer {
+    pub tenant_id: TenantId,
+    pub current_layer_id: LayerId,
+    pub updated_at: DateTime<Utc>,
+}
+
+// ============================================================================
+// Text File Optimization Models
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct TextBlock {
+    pub block_id: BlockId,
+    pub content_hash: String,
+    pub content: String,
+    pub line_count: i32,
+    pub byte_size: i32,
+    pub encoding: String,
+    pub ref_count: i32,
+    pub created_at: DateTime<Utc>,
+    pub last_accessed_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateTextBlockInput {
+    pub content: String,
+    pub encoding: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct TextFileMetadata {
+    pub tenant_id: TenantId,
+    pub inode_id: InodeId,
+    pub layer_id: LayerId,
+    pub total_lines: i32,
+    pub encoding: String,
+    pub line_ending: String,
+    pub has_trailing_newline: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateTextMetadataInput {
+    pub tenant_id: TenantId,
+    pub inode_id: InodeId,
+    pub layer_id: LayerId,
+    pub total_lines: i32,
+    pub encoding: String,
+    pub line_ending: String,
+    pub has_trailing_newline: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct TextLineMap {
+    pub tenant_id: TenantId,
+    pub inode_id: InodeId,
+    pub layer_id: LayerId,
+    pub line_number: i32,
+    pub block_id: BlockId,
+    pub block_line_offset: i32,
 }
 
 #[cfg(test)]

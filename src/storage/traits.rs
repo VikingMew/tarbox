@@ -3,11 +3,14 @@ use async_trait::async_trait;
 #[cfg(any(test, feature = "mockall"))]
 use mockall::automock;
 
-use crate::types::{InodeId, TenantId};
+use crate::types::{BlockId, InodeId, LayerId, TenantId};
+use chrono::{DateTime, Utc};
 
 use super::models::{
-    CreateBlockInput, CreateInodeInput, CreateTenantInput, DataBlock, Inode, Tenant,
-    UpdateInodeInput,
+    AuditLog, AuditStats, CreateAuditLogInput, CreateBlockInput, CreateInodeInput,
+    CreateLayerEntryInput, CreateLayerInput, CreateTenantInput, CreateTextBlockInput,
+    CreateTextMetadataInput, DataBlock, Inode, Layer, LayerEntry, QueryAuditLogsInput, Tenant,
+    TextBlock, TextFileMetadata, TextLineMap, UpdateInodeInput,
 };
 
 #[cfg_attr(any(test, feature = "mockall"), automock)]
@@ -53,6 +56,69 @@ pub trait BlockRepository: Send + Sync {
     ) -> Result<Option<DataBlock>>;
     async fn list(&self, tenant_id: TenantId, inode_id: InodeId) -> Result<Vec<DataBlock>>;
     async fn delete(&self, tenant_id: TenantId, inode_id: InodeId) -> Result<u64>;
+}
+
+#[cfg_attr(any(test, feature = "mockall"), automock)]
+#[async_trait]
+pub trait AuditLogRepository: Send + Sync {
+    async fn create(&self, input: CreateAuditLogInput) -> Result<AuditLog>;
+    async fn batch_create(&self, inputs: Vec<CreateAuditLogInput>) -> Result<u64>;
+    async fn query(&self, input: QueryAuditLogsInput) -> Result<Vec<AuditLog>>;
+    async fn aggregate_stats(
+        &self,
+        tenant_id: TenantId,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+    ) -> Result<AuditStats>;
+}
+
+#[cfg_attr(any(test, feature = "mockall"), automock)]
+#[async_trait]
+pub trait LayerRepository: Send + Sync {
+    async fn create(&self, input: CreateLayerInput) -> Result<Layer>;
+    async fn get(&self, tenant_id: TenantId, layer_id: LayerId) -> Result<Option<Layer>>;
+    async fn list(&self, tenant_id: TenantId) -> Result<Vec<Layer>>;
+    async fn get_layer_chain(&self, tenant_id: TenantId, layer_id: LayerId) -> Result<Vec<Layer>>;
+    async fn delete(&self, tenant_id: TenantId, layer_id: LayerId) -> Result<bool>;
+
+    async fn add_entry(&self, input: CreateLayerEntryInput) -> Result<LayerEntry>;
+    async fn list_entries(&self, tenant_id: TenantId, layer_id: LayerId)
+    -> Result<Vec<LayerEntry>>;
+
+    async fn get_current_layer(&self, tenant_id: TenantId) -> Result<Option<LayerId>>;
+    async fn set_current_layer(&self, tenant_id: TenantId, layer_id: LayerId) -> Result<()>;
+}
+
+#[cfg_attr(any(test, feature = "mockall"), automock)]
+#[async_trait]
+pub trait TextBlockRepository: Send + Sync {
+    async fn create_block(&self, input: CreateTextBlockInput) -> Result<TextBlock>;
+    async fn get_block(&self, block_id: BlockId) -> Result<Option<TextBlock>>;
+    async fn get_block_by_hash(&self, content_hash: &str) -> Result<Option<TextBlock>>;
+    async fn increment_ref_count(&self, block_id: BlockId) -> Result<()>;
+    async fn decrement_ref_count(&self, block_id: BlockId) -> Result<i32>;
+
+    async fn create_metadata(&self, input: CreateTextMetadataInput) -> Result<TextFileMetadata>;
+    async fn get_metadata(
+        &self,
+        tenant_id: TenantId,
+        inode_id: InodeId,
+        layer_id: LayerId,
+    ) -> Result<Option<TextFileMetadata>>;
+
+    async fn create_line_mappings(
+        &self,
+        tenant_id: TenantId,
+        inode_id: InodeId,
+        layer_id: LayerId,
+        mappings: Vec<(i32, BlockId, i32)>,
+    ) -> Result<u64>;
+    async fn get_line_mappings(
+        &self,
+        tenant_id: TenantId,
+        inode_id: InodeId,
+        layer_id: LayerId,
+    ) -> Result<Vec<TextLineMap>>;
 }
 
 #[cfg(test)]
