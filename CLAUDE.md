@@ -358,6 +358,94 @@ tests/
 └── storage_e2e_test.rs                         # E2E with real PostgreSQL (optional)
 ```
 
+## Task Completion Requirements
+
+**CRITICAL**: Every task MUST meet these requirements to be considered complete:
+
+### Code Requirements
+1. ✅ All planned functionality implemented
+2. ✅ Code compiles without errors
+3. ✅ `cargo fmt --all` passes
+4. ✅ `cargo clippy --all-targets --all-features -- -D warnings` passes
+
+### Testing Requirements (MANDATORY)
+Each task MUST achieve **>80% test coverage** before being marked as complete:
+
+#### For Implementation Tasks (Task 02, 03, 04, 05, 06, 07, 08)
+**Required**:
+- ✅ Unit tests for all pure functions (target: 55-60% coverage)
+- ✅ Integration tests with mockall for business logic (additional 25-30% coverage)
+- ✅ Total coverage **>80%**
+- ✅ All tests pass
+
+**Verification**:
+```bash
+# Must pass before task completion
+cargo test --lib --features mockall
+cargo llvm-cov --lib --tests --features mockall --summary-only
+# Check TOTAL line shows >80%
+```
+
+**Integration Test Requirements**:
+- Create `tests/<module>_integration_test.rs` for each major module
+- Use `MockInodeRepository`, `MockBlockRepository`, etc. from `storage::traits`
+- Test business logic with mocked dependencies
+- Cover error cases and edge cases
+
+#### For Infrastructure Tasks (Task 01)
+- ✅ Project compiles
+- ✅ Basic sanity tests pass
+- Coverage requirement: N/A (infrastructure only)
+
+### Documentation Requirements
+- ✅ Update `task/XX-task-name.md` with completion status
+- ✅ Mark checkboxes for completed subtasks
+- ✅ Document any deviations from original plan
+- ✅ Update coverage report if applicable
+
+### Common Reasons Tasks Are NOT Complete
+❌ "Code works but no tests" - **NOT COMPLETE**
+❌ "Unit tests only, 45% coverage" - **NOT COMPLETE**
+❌ "Integration tests planned but not written" - **NOT COMPLETE**  
+❌ "E2E tests exist but require database setup" - **OK if unit + integration >80%**
+
+### Coverage Enforcement
+- Run `cargo llvm-cov` after every task
+- Create `COVERAGE_REPORT.md` showing before/after
+- If coverage <80%, task status = "Partial - Needs Tests"
+- Tests are NOT optional - they are part of the task
+
+### Example Task Completion Checklist
+```markdown
+## Task XX Completion Status
+
+### Code ✅
+- [x] All features implemented
+- [x] Compiles successfully
+- [x] fmt and clippy pass
+
+### Tests ✅ 
+- [x] Unit tests: 94 tests, 55% coverage
+- [x] Integration tests: 12 tests, 28% coverage
+- [x] **Total coverage: 83%** ✅
+- [x] All tests pass
+
+### Documentation ✅
+- [x] Task file updated
+- [x] Coverage report created
+
+**Status**: ✅ COMPLETE
+```
+
+### What to Do if Coverage is Low
+If task coverage <80%:
+1. Identify untested modules with `cargo llvm-cov --summary-only`
+2. Create integration tests in `tests/` directory
+3. Use mockall to mock dependencies
+4. Add error case tests
+5. Re-run coverage until >80%
+6. **Do not mark task complete until coverage target met**
+
 ## Important Constraints
 
 - Layer model is LINEAR (no branches), enforced in layer creation logic

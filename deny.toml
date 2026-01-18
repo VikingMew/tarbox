@@ -5,8 +5,6 @@
 # Skip license checking - many crates have incorrectly formatted licenses
 # (e.g., "MIT/Apache-2.0" instead of "MIT OR Apache-2.0")
 # but are safe OSI-approved licenses used widely in Rust ecosystem
-unlicensed = "allow"
-allow-osi-fsf-free = "both"
 confidence-threshold = 0.8
 
 [bans]
@@ -21,11 +19,9 @@ deny = []
 # Database URL for security advisories
 db-urls = ["https://github.com/rustsec/advisory-db"]
 # What to do on vulnerability detection
-vulnerability = "deny"
 unmaintained = "none"
 unsound = "none"
 yanked = "deny"
-notice = "warn"
 # Ignore specific advisories (should be documented why)
 ignore = []
 
