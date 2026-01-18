@@ -125,7 +125,7 @@ Phase 4: 云原生 (计划中)     ░░░░░░░░░░░░░░░
   - Native mounts 配置表（原生挂载）
   - 统计和快照表
 - **预计工作量**: 2-3 周
-- **关联 Spec**: **spec/01-advanced-storage.md** (核心), spec/03, spec/04, spec/10, spec/07
+- **关联 Spec**: **spec/16-advanced-storage.md** (核心), spec/03, spec/04, spec/10, spec/07
 
 #### Task 08: 分层文件系统
 - **状态**: 计划中

@@ -22,9 +22,9 @@
 
 Tarbox is a high-performance filesystem implementation using PostgreSQL as the storage backend, specifically designed for AI agents that require reliable, auditable, and version-controlled file storage.
 
-**⚠️ Current Status: MVP Development Phase**
+**✅ Current Status: Core Features Complete**
 
-Tarbox is under active development. The core storage layer and CLI tools are functional, while advanced features like FUSE mounting, layering, and Kubernetes integration are planned for future releases.
+Tarbox has completed its core filesystem implementation. The PostgreSQL storage backend, CLI tools, and FUSE mounting are fully functional. Advanced features like layering, audit system, and Kubernetes integration are under development.
 
 ### Why Tarbox?
 
@@ -40,41 +40,43 @@ Traditional filesystems lack the auditability, versioning, and multi-tenancy fea
 
 ## ✨ Features
 
-### ✅ Implemented (MVP)
+### ✅ Currently Available
 
 - **🐘 PostgreSQL Storage Backend**
   - ACID guarantees for data consistency
-  - Multi-tenant data isolation
+  - Multi-tenant data isolation with complete isolation
   - Metadata and data block storage
   - Content-addressed storage with BLAKE3 hashing
 
-- **📁 Basic File Operations**
+- **📁 Complete File Operations**
   - Directory operations (create, list, remove)
   - File operations (create, read, write, delete)
   - Path resolution and validation
   - Metadata operations (stat, chmod, chown)
 
-- **🔧 CLI Tool**
+- **🔧 Command-Line Interface**
   - Tenant management (create, list, delete, info)
-  - File system operations (mkdir, ls, rm, cat, write)
+  - File system operations (mkdir, ls, rm, cat, write, stat)
   - Database initialization
+  - FUSE mounting and unmounting
   - Configurable via environment variables
 
-### 🚧 Planned Features
+- **📂 FUSE Mount Support**
+  - Mount as standard POSIX filesystem
+  - Full compatibility with Unix tools (ls, cat, vim, etc.)
+  - Read-only or read-write modes
+  - Multi-user access control
+  - Works with any FUSE-compatible application
 
-- **📁 Full POSIX Compatibility** (Task 05)
-  - FUSE interface for seamless mounting
-  - Symbolic and hard links support
-  - Extended attributes
-  - File locking
+### 🚧 Coming Soon
 
-- **🔍 Complete Audit Trail** (Task 06)
+- **🔍 Complete Audit Trail**
   - Every file operation logged with metadata
   - Time-partitioned audit tables for efficient queries
   - Version history tracking for all changes
   - Compliance reporting support
 
-- **🐳 Docker-Style Layered Filesystem** (Task 08)
+- **🐳 Docker-Style Layered Filesystem**
   - Create checkpoints and snapshots instantly
   - Copy-on-Write (COW) for efficient storage
   - Linear history model with fast layer switching
@@ -83,14 +85,14 @@ Traditional filesystems lack the auditability, versioning, and multi-tenancy fea
 - **📝 Git-Like Text File Optimization**
   - Line-level diff storage for text files (CSV, Markdown, YAML, code, etc.)
   - Cross-file and cross-layer content deduplication
-  - Efficient version comparison with `tarbox diff`
+  - Efficient version comparison and diffs
   - Completely transparent to applications
 
-- **⚡ Native Filesystem Mounting**
-  - Direct host FS access for performance-critical paths
-  - Configurable read-only or read-write modes
-  - Shared system directories (`/bin`, `/usr`) or tenant-specific workspaces
-  - Perfect for Python venvs, npm modules, and ML model caches
+- **📁 Advanced POSIX Features**
+  - Symbolic and hard links support
+  - Extended attributes (xattr)
+  - File locking mechanisms
+  - Advanced permission system
 
 - **☸️ Kubernetes Integration**
   - Native CSI (Container Storage Interface) driver
@@ -98,11 +100,11 @@ Traditional filesystems lack the auditability, versioning, and multi-tenancy fea
   - Multi-tenant isolation at the infrastructure level
   - Snapshot and backup support
 
-- **🌐 WASI Support**
-  - WebAssembly System Interface compatibility
-  - Run in edge computing environments
-  - Browser-based file system
-  - Serverless function integration
+- **🌐 Modern Interfaces**
+  - REST API for remote management
+  - gRPC API for high performance
+  - WASI support for WebAssembly environments
+  - Web-based management UI
 
 ---
 
@@ -216,7 +218,7 @@ tarbox tenant info myagent
 tarbox tenant delete myagent
 ```
 
-**Note**: FUSE mounting, layering, and other advanced features are not yet implemented. See [Roadmap](#-roadmap) for planned features.
+**Note**: Advanced features like layering, audit logging, and text optimization are not yet implemented. See [Roadmap](#-roadmap) for planned features.
 
 ### CLI Commands (Currently Available)
 
@@ -239,24 +241,35 @@ tarbox --tenant <name> write <path> <content>  # Write content to file
 tarbox --tenant <name> cat <path>              # Read file content
 tarbox --tenant <name> rm <path>               # Remove file
 tarbox --tenant <name> stat <path>             # Show file information
+
+# FUSE mounting (NEW in Task 05 ✅)
+tarbox --tenant <name> mount <mountpoint>      # Mount filesystem via FUSE
+tarbox --tenant <name> mount <mountpoint> --allow-other  # Allow other users
+tarbox --tenant <name> mount <mountpoint> --read-only    # Mount as read-only
+tarbox umount <mountpoint>                     # Unmount filesystem
+
+# Example: Access with standard Unix tools after mounting
+tarbox --tenant myagent mount /mnt/tarbox
+ls /mnt/tarbox                                 # Use standard ls command
+cat /mnt/tarbox/data/config.txt                # Use standard cat command
+echo "hello" > /mnt/tarbox/data/test.txt       # Use standard shell redirect
+vim /mnt/tarbox/data/code.py                   # Use any text editor
+tarbox umount /mnt/tarbox                      # Unmount when done
 ```
 
-**Planned Commands** (not yet implemented):
+**Planned Commands** (in development):
 
 ```bash
-# Layer operations (Task 08 - Layered Filesystem)
+# Layer operations (snapshots and versioning)
 tarbox layer list --tenant <name>
-tarbox layer create --tenant <name>
+tarbox layer create --tenant <name> --message "Checkpoint before update"
 tarbox layer switch --tenant <name> --layer <id>
 tarbox layer diff --layer1 <id1> --layer2 <id2>
 
-# Audit queries (Task 06 - Audit System)
+# Audit queries (operation history)
 tarbox audit --tenant <name> --since "1 day ago"
 tarbox audit --path <path> --operation write
-
-# FUSE mounting (Task 05 - FUSE Interface)
-tarbox mount <mountpoint> --tenant <name>
-tarbox umount <mountpoint>
+tarbox audit --export --format json > audit.json
 ```
 
 ---
@@ -265,10 +278,9 @@ tarbox umount <mountpoint>
 
 ### For Users
 
-- **[Quick Start Guide](docs/quick-start.md)** - Get up and running in 5 minutes
-- **[Configuration Reference](docs/configuration.md)** - All config options explained
-- **[CLI Reference](docs/cli-reference.md)** - Complete command documentation
-- **[Kubernetes Deployment](docs/kubernetes.md)** - Deploy with CSI driver
+- **[Quick Start](#-quick-start)** - Get up and running in 5 minutes (see above)
+- **[CLI Reference](#cli-commands-currently-available)** - Complete command documentation (see above)
+- **[Configuration](CLAUDE.md)** - Development configuration guide
 
 ### For Developers
 
@@ -281,18 +293,28 @@ tarbox umount <mountpoint>
 - **[Contributing Guide](CONTRIBUTING.md)** - How to contribute
 - **[Development Setup](CLAUDE.md)** - Internal dev guidelines
 
-### Task Progress
+### Development Status
 
-View our development roadmap in the [task/](task/) directory:
+**✅ Completed**
+- PostgreSQL storage backend with ACID guarantees
+- Complete file and directory operations
+- Multi-tenant isolation
+- Command-line interface
+- FUSE mounting support
 
-- ✅ **Task 01**: Project setup and infrastructure
-- ✅ **Task 02**: Database layer (MVP) - PostgreSQL storage backend
-- ✅ **Task 03**: Filesystem core (MVP) - Basic file operations
-- ✅ **Task 04**: CLI tool (MVP) - Command-line interface
-- 📅 **Task 05**: FUSE interface - POSIX mounting
-- 📅 **Task 06**: Audit system - Operation logging
-- 📅 **Task 07**: Advanced filesystem - Permissions, links, caching
-- 📅 **Task 08**: Layered filesystem - COW, checkpoints, versioning
+**🚧 In Development**
+- Audit logging system
+- Layered filesystem with snapshots
+- Text file optimization
+- Advanced permission system
+
+**📋 Planned**
+- Kubernetes CSI driver
+- REST and gRPC APIs
+- Web-based management UI
+- WASI support for WebAssembly
+
+For detailed technical roadmap, see [task/](task/) directory.
 
 ---
 
@@ -557,40 +579,36 @@ For security vulnerabilities, please see [SECURITY.md](SECURITY.md).
 
 ## 🗺️ Roadmap
 
-### MVP Phase (Current)
+### ✅ Core Features (Completed)
 
-- [x] Project setup with Rust 2024 edition
-- [ ] Database layer with multi-tenancy
-- [ ] Basic filesystem operations (POSIX)
-- [ ] CLI tool for tenant and file management
+- [x] PostgreSQL storage backend with ACID guarantees
+- [x] Multi-tenant data isolation
+- [x] Complete file and directory operations
+- [x] Command-line interface for management
+- [x] FUSE mounting support
 
-### Phase 2: Core Features
+### 🚧 Advanced Storage (In Development)
 
-- [ ] FUSE interface with path routing
-- [ ] Layered filesystem with COW
-- [ ] Audit system with time partitioning
-- [ ] Native mount support
+- [ ] Complete audit trail with time partitioning
+- [ ] Layered filesystem with Copy-on-Write
+- [ ] Snapshot and checkpoint support
+- [ ] Text file optimization with line-level diffs
+- [ ] Advanced permission system
 
-### Phase 3: Advanced Features
-
-- [ ] Text file optimization (line-level diffs)
-- [ ] Advanced caching strategies
-- [ ] Permission system enhancements
-- [ ] Symbolic and hard links
-
-### Phase 4: Cloud Native
+### 📋 Cloud Native Integration (Planned)
 
 - [ ] Kubernetes CSI driver
-- [ ] REST API for management
+- [ ] REST API for remote management
 - [ ] gRPC API for high performance
 - [ ] Monitoring and metrics (Prometheus)
 
-### Phase 5: Future
+### 🔮 Future Enhancements
 
+- [ ] WASI support for WebAssembly
+- [ ] Web-based management UI
 - [ ] Distributed PostgreSQL support (Citus)
 - [ ] Real-time replication
 - [ ] ML model versioning helpers
-- [ ] Web UI for management
 
 ---
 

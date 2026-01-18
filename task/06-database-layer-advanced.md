@@ -17,7 +17,7 @@
 
 ## 依赖的Spec
 
-- **spec/01-advanced-storage.md** - 高级存储特性（核心）
+- **spec/16-advanced-storage.md** - 高级存储特性（核心）
 - spec/03-audit-system.md - 审计系统设计
 - spec/04-layered-filesystem.md - 分层文件系统
 - spec/10-text-file-optimization.md - 文本文件优化

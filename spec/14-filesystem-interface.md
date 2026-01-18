@@ -271,8 +271,8 @@ pub trait FilesystemInterface: Send + Sync {
 /// 文件/目录属性
 #[derive(Debug, Clone)]
 pub struct FileAttr {
-    /// Inode ID
-    pub inode: u64,
+    /// Inode ID (i64 to match PostgreSQL BIGSERIAL)
+    pub inode: i64,
     
     /// 文件类型
     pub kind: FileType,
@@ -346,8 +346,8 @@ pub enum FileType {
 /// 目录项
 #[derive(Debug, Clone)]
 pub struct DirEntry {
-    /// Inode ID
-    pub inode: u64,
+    /// Inode ID (i64 to match PostgreSQL BIGSERIAL)
+    pub inode: i64,
     
     /// 文件名
     pub name: String,
