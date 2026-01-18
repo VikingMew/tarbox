@@ -91,8 +91,10 @@ jobs:
 
       - name: Setup FUSE permissions
         run: |
-          sudo usermod -a -G fuse $USER
-          sudo sed -i 's/#user_allow_other/user_allow_other/' /etc/fuse.conf || echo "user_allow_other" | sudo tee -a /etc/fuse.conf
+          # Enable user_allow_other in fuse.conf
+          sudo sed -i 's/#user_allow_other/user_allow_other/' /etc/fuse.conf 2>/dev/null || echo "user_allow_other" | sudo tee -a /etc/fuse.conf
+          # Verify fuse device exists
+          ls -l /dev/fuse || echo "FUSE device not found"
 
       - name: Run database migrations
         env:
