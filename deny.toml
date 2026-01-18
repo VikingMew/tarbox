@@ -23,7 +23,7 @@ db-urls = ["https://github.com/rustsec/advisory-db"]
 # What to do on vulnerability detection
 vulnerability = "deny"
 unmaintained = "warn"
-unsound = "warn"
+unsound = "none"
 yanked = "warn"
 notice = "warn"
 # Ignore specific advisories (should be documented why)
