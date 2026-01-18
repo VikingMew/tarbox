@@ -1,0 +1,17 @@
+# Cargo audit configuration
+# See: https://github.com/rustsec/rustsec/tree/main/cargo-audit
+
+[advisories]
+# RUSTSEC-2023-0071: rsa crate - Marvin Attack timing vulnerability
+# This is a low-severity timing side-channel vulnerability in RSA decryption.
+# We ignore it because:
+# 1. Tarbox doesn't directly use RSA operations
+# 2. This is a transitive dependency (likely from tonic/rustls)
+# 3. The vulnerability requires very specific attack conditions
+# 4. Will be resolved when dependencies update
+ignore = ["RUSTSEC-2023-0071"]
+
+# If you need to ignore other advisories, add them here with explanations
+# ignore = [
+#     "RUSTSEC-YYYY-XXXX",  # Reason for ignoring
+# ]
