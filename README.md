@@ -422,12 +422,12 @@ cargo build
 # Run unit tests only
 cargo test --lib
 
-# Run E2E tests (requires PostgreSQL)
+# Run E2E tests locally (requires PostgreSQL and FUSE)
 export DATABASE_URL=postgres://postgres:postgres@localhost:5432/tarbox_test
-./scripts/run-e2e-tests.sh
-
-# Run E2E tests with FUSE mount tests (requires sudo)
-./scripts/run-e2e-tests.sh --with-fuse
+cargo test --test filesystem_integration_test
+cargo test --test fuse_backend_integration_test
+cargo test --test storage_e2e_test
+sudo -E cargo test --test fuse_mount_e2e_test -- --ignored --test-threads=1
 
 # Run specific test
 cargo test test_name
@@ -467,7 +467,7 @@ Tarbox uses a three-layer testing approach:
    - FuseBackend integration: 17 tests
    - FUSE mount E2E: 11 tests (requires sudo)
    - Storage E2E: 7 tests
-   - Run with: `./scripts/run-e2e-tests.sh`
+   - Run locally or via GitHub Actions workflow
    - **Expected total coverage with E2E: 85-90%**
 
 **Note**: E2E tests require:

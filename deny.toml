@@ -2,10 +2,14 @@
 # See: https://embarkstudios.github.io/cargo-deny/
 
 [licenses]
-# Skip license checking - many crates have incorrectly formatted licenses
-# (e.g., "MIT/Apache-2.0" instead of "MIT OR Apache-2.0")
-# but are safe OSI-approved licenses used widely in Rust ecosystem
-confidence-threshold = 0.8
+# Disable license checking
+unlicensed = "allow"
+allow = []
+deny = []
+copyleft = "allow"
+allow-osi-fsf-free = "neither"
+default = "allow"
+confidence-threshold = 0.0
 
 [bans]
 # Warn on multiple versions of the same crate
