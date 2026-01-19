@@ -132,4 +132,6 @@ tarbox umount /mnt/tarbox
 
 ---
 
-**注意**: Tarbox 目前处于活跃开发阶段。核心功能（PostgreSQL 存储、CLI 工具、FUSE 挂载）已完成。高级功能（分层文件系统、审计系统）正在开发中。
+**注意**: Tarbox 目前处于活跃开发阶段。
+- ✅ **已完成**: 核心功能（PostgreSQL 存储、CLI 工具、FUSE 挂载）和高级存储数据库层（审计、分层、文本优化）
+- 🚧 **开发中**: 文件系统与高级存储的集成（COW、diff、hooks）

@@ -1,5 +1,26 @@
 # 分层文件系统设计
 
+## 实现状态
+
+**✅ 已实现** (Task 06, 2026-01-19)
+
+核心数据库表和操作已完成：
+- ✅ layers表（parent_layer_id形成链式结构）
+- ✅ layer_entries表（记录文件变更）
+- ✅ tenant_current_layer表（跟踪租户当前层）
+- ✅ 递归CTE查询层链（get_layer_chain函数）
+- ✅ LayerRepository trait（9个方法）
+- ✅ LayerOperations实现（层CRUD、层链查询、条目管理）
+- ✅ 10个集成测试
+- ⚠️ 文件系统层集成待实现（将在Task 08实现）
+
+**代码位置**:
+- 迁移: `migrations/20260118000003_create_layers.sql`
+- 模型: `src/storage/models.rs` (Layer, LayerEntry, TenantCurrentLayer, LayerStatus, ChangeType)
+- Trait: `src/storage/traits.rs` (LayerRepository)
+- 实现: `src/storage/layer.rs` (LayerOperations)
+- 测试: `tests/layer_integration_test.rs`
+
 ## 概述
 
 Tarbox 的分层系统类似于 Docker 镜像层，采用写时复制（Copy-on-Write）技术，支持文件系统的版本化和快速回溯。

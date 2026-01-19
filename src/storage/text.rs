@@ -383,7 +383,7 @@ mod tests {
         let block_id = uuid::Uuid::new_v4();
 
         // Simulate line mappings
-        let mappings = vec![
+        let mappings = [
             (1i32, block_id, 0i32), // Line 1, block 0, offset 0
             (2i32, block_id, 1i32), // Line 2, block 0, offset 1
             (3i32, block_id, 2i32), // Line 3, block 0, offset 2

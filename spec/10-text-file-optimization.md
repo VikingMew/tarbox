@@ -1,5 +1,27 @@
 # 文本文件优化
 
+## 实现状态
+
+**✅ 已实现** (Task 06, 2026-01-19)
+
+核心数据库表和操作已完成：
+- ✅ text_blocks表（内容寻址存储，blake3哈希，ref_count管理）
+- ✅ text_file_metadata表（文件级元数据）
+- ✅ text_line_map表（行号到块的映射）
+- ✅ find_or_create_text_block函数（自动去重）
+- ✅ cleanup_unused_text_blocks函数（清理未使用块）
+- ✅ TextBlockRepository trait（9个方法）
+- ✅ TextBlockOperations实现（blake3哈希、去重、引用计数、行映射）
+- ✅ 14个集成测试
+- ⚠️ 文件系统层集成待实现（将在Task 08实现diff功能）
+
+**代码位置**:
+- 迁移: `migrations/20260118000004_create_text_storage.sql`
+- 模型: `src/storage/models.rs` (TextBlock, TextFileMetadata, TextLineMap)
+- Trait: `src/storage/traits.rs` (TextBlockRepository)
+- 实现: `src/storage/text.rs` (TextBlockOperations, compute_content_hash)
+- 测试: `tests/text_storage_integration_test.rs`
+
 ## 概述
 
 针对 Agent 常用的文本文件（CSV、Markdown、YAML、HTML、JSON、代码等），提供类似 Git 的行级差异存储和管理，优化存储空间和版本对比体验。

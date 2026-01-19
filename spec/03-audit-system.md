@@ -1,5 +1,24 @@
 # 审计系统设计
 
+## 实现状态
+
+**✅ 已实现** (Task 06, 2026-01-19)
+
+核心数据库表和操作已完成：
+- ✅ audit_logs表（按log_date分区）
+- ✅ 分区管理函数（create_audit_log_partition, cleanup_old_audit_partitions）
+- ✅ AuditLogRepository trait（4个方法）
+- ✅ AuditLogOperations实现（动态查询构建、聚合统计）
+- ✅ 29个集成测试（含5个audit测试）
+- ⚠️ 异步批量写入功能待实现（计划在实际使用时添加）
+
+**代码位置**:
+- 迁移: `migrations/20260118000002_create_audit_logs.sql`
+- 模型: `src/storage/models.rs` (AuditLog, CreateAuditLogInput, QueryAuditLogsInput, AuditStats)
+- Trait: `src/storage/traits.rs` (AuditLogRepository)
+- 实现: `src/storage/audit.rs` (AuditLogOperations)
+- 测试: `tests/audit_integration_test.rs`
+
 ## 概述
 
 审计系统是 Tarbox 的核心特性之一，专为 AI Agent 设计，提供完整的文件操作追踪和分析能力。

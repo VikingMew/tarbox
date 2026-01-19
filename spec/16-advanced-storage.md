@@ -6,14 +6,32 @@
 > 
 > MVP 核心表（tenants, inodes, blocks）的设计见 [spec/01](01-database-schema.md)。
 
+## 实现状态
+
+**✅ 已实现** (Task 06, 2026-01-19)
+
+核心数据库表和功能已完成：
+- ✅ 审计日志系统（audit_logs表 + 分区管理）
+- ✅ 分层文件系统（layers, layer_entries, tenant_current_layer表）
+- ✅ 文本文件优化（text_blocks, text_file_metadata, text_line_map表）
+- ✅ 3个Repository traits + 实现（Audit, Layer, TextBlock）
+- ✅ 29个集成测试（5 audit + 10 layer + 14 text）
+- ⚠️ 原生挂载表未实现（使用bubblewrap方案替代）
+- ⚠️ 快照管理待实现（计划在Task 08）
+
+详细状态参考：
+- [spec/03-audit-system.md](03-audit-system.md) - 审计系统实现状态
+- [spec/04-layered-filesystem.md](04-layered-filesystem.md) - 分层系统实现状态
+- [spec/10-text-file-optimization.md](10-text-file-optimization.md) - 文本优化实现状态
+
 ## 概述
 
 高级存储特性在 MVP 核心之上提供：
-- **分层文件系统**: Docker 风格的 COW 层
-- **文本文件优化**: 行级存储和跨层去重
-- **审计日志**: 完整的操作审计和合规报告
-- **原生挂载**: 性能优化的原生 FS 直通
-- **快照管理**: 时间点恢复
+- **分层文件系统**: Docker 风格的 COW 层 ✅
+- **文本文件优化**: 行级存储和跨层去重 ✅
+- **审计日志**: 完整的操作审计和合规报告 ✅
+- **原生挂载**: 性能优化的原生 FS 直通 ⚠️ (使用bubblewrap替代)
+- **快照管理**: 时间点恢复 ⚠️ (待实现)
 
 ## 分层文件系统
 

@@ -343,6 +343,6 @@ mod tests {
         };
 
         assert_eq!(input.limit.unwrap(), 1000);
-        assert_eq!(input.success.unwrap(), true);
+        assert!(input.success.unwrap());
     }
 }
