@@ -1,12 +1,12 @@
 use anyhow::Result;
 use tarbox::config::DatabaseConfig;
 use tarbox::storage::{
-    ChangeType, CreateLayerEntryInput, CreateLayerInput, DatabasePool, LayerOperations,
-    LayerRepository,
+    ChangeType, CreateLayerEntryInput, CreateLayerInput, CreateTenantInput, DatabasePool,
+    LayerOperations, LayerRepository, TenantOperations, TenantRepository,
 };
 use uuid::Uuid;
 
-async fn setup_test_db() -> Result<DatabasePool> {
+async fn setup_test_db() -> Result<(DatabasePool, Uuid)> {
     let config = DatabaseConfig {
         url: std::env::var("DATABASE_URL")
             .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/tarbox".into()),
@@ -16,15 +16,19 @@ async fn setup_test_db() -> Result<DatabasePool> {
 
     let pool = DatabasePool::new(&config).await?;
     pool.run_migrations().await?;
-    Ok(pool)
+
+    // Create test tenant
+    let tenant_ops = TenantOperations::new(pool.pool());
+    let tenant =
+        tenant_ops.create(CreateTenantInput { tenant_name: "test-tenant".to_string() }).await?;
+
+    Ok((pool, tenant.tenant_id))
 }
 
 #[tokio::test]
 async fn test_layer_create() -> Result<()> {
-    let pool = setup_test_db().await?;
+    let (pool, tenant_id) = setup_test_db().await?;
     let layer_ops = LayerOperations::new(pool.pool());
-
-    let tenant_id = Uuid::new_v4();
 
     let input = CreateLayerInput {
         tenant_id,
@@ -49,10 +53,8 @@ async fn test_layer_create() -> Result<()> {
 
 #[tokio::test]
 async fn test_layer_get() -> Result<()> {
-    let pool = setup_test_db().await?;
+    let (pool, tenant_id) = setup_test_db().await?;
     let layer_ops = LayerOperations::new(pool.pool());
-
-    let tenant_id = Uuid::new_v4();
 
     // Create a layer
     let input = CreateLayerInput {
@@ -79,10 +81,8 @@ async fn test_layer_get() -> Result<()> {
 
 #[tokio::test]
 async fn test_layer_list() -> Result<()> {
-    let pool = setup_test_db().await?;
+    let (pool, tenant_id) = setup_test_db().await?;
     let layer_ops = LayerOperations::new(pool.pool());
-
-    let tenant_id = Uuid::new_v4();
 
     // Create multiple layers
     for i in 1..=3 {
@@ -110,10 +110,8 @@ async fn test_layer_list() -> Result<()> {
 
 #[tokio::test]
 async fn test_layer_chain() -> Result<()> {
-    let pool = setup_test_db().await?;
+    let (pool, tenant_id) = setup_test_db().await?;
     let layer_ops = LayerOperations::new(pool.pool());
-
-    let tenant_id = Uuid::new_v4();
 
     // Create base layer
     let base_input = CreateLayerInput {
@@ -161,10 +159,8 @@ async fn test_layer_chain() -> Result<()> {
 
 #[tokio::test]
 async fn test_layer_delete() -> Result<()> {
-    let pool = setup_test_db().await?;
+    let (pool, tenant_id) = setup_test_db().await?;
     let layer_ops = LayerOperations::new(pool.pool());
-
-    let tenant_id = Uuid::new_v4();
 
     // Create a layer
     let input = CreateLayerInput {
@@ -190,10 +186,8 @@ async fn test_layer_delete() -> Result<()> {
 
 #[tokio::test]
 async fn test_layer_add_entry() -> Result<()> {
-    let pool = setup_test_db().await?;
+    let (pool, tenant_id) = setup_test_db().await?;
     let layer_ops = LayerOperations::new(pool.pool());
-
-    let tenant_id = Uuid::new_v4();
 
     // Create a layer
     let layer_input = CreateLayerInput {
@@ -229,10 +223,8 @@ async fn test_layer_add_entry() -> Result<()> {
 
 #[tokio::test]
 async fn test_layer_list_entries() -> Result<()> {
-    let pool = setup_test_db().await?;
+    let (pool, tenant_id) = setup_test_db().await?;
     let layer_ops = LayerOperations::new(pool.pool());
-
-    let tenant_id = Uuid::new_v4();
 
     // Create a layer
     let layer_input = CreateLayerInput {
@@ -272,10 +264,8 @@ async fn test_layer_list_entries() -> Result<()> {
 
 #[tokio::test]
 async fn test_current_layer_tracking() -> Result<()> {
-    let pool = setup_test_db().await?;
+    let (pool, tenant_id) = setup_test_db().await?;
     let layer_ops = LayerOperations::new(pool.pool());
-
-    let tenant_id = Uuid::new_v4();
 
     // Initially no current layer
     let current = layer_ops.get_current_layer(tenant_id).await?;
@@ -321,10 +311,8 @@ async fn test_current_layer_tracking() -> Result<()> {
 
 #[tokio::test]
 async fn test_layer_entry_change_types() -> Result<()> {
-    let pool = setup_test_db().await?;
+    let (pool, tenant_id) = setup_test_db().await?;
     let layer_ops = LayerOperations::new(pool.pool());
-
-    let tenant_id = Uuid::new_v4();
 
     // Create a layer
     let layer_input = CreateLayerInput {

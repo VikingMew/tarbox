@@ -1,12 +1,12 @@
 use anyhow::Result;
 use tarbox::config::DatabaseConfig;
 use tarbox::storage::{
-    CreateTextBlockInput, CreateTextMetadataInput, DatabasePool, TextBlockOperations,
-    TextBlockRepository,
+    CreateTenantInput, CreateTextBlockInput, CreateTextMetadataInput, DatabasePool,
+    TenantOperations, TenantRepository, TextBlockOperations, TextBlockRepository,
 };
 use uuid::Uuid;
 
-async fn setup_test_db() -> Result<DatabasePool> {
+async fn setup_test_db() -> Result<(DatabasePool, Uuid)> {
     let config = DatabaseConfig {
         url: std::env::var("DATABASE_URL")
             .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/tarbox".into()),
@@ -16,12 +16,18 @@ async fn setup_test_db() -> Result<DatabasePool> {
 
     let pool = DatabasePool::new(&config).await?;
     pool.run_migrations().await?;
-    Ok(pool)
+
+    // Create test tenant
+    let tenant_ops = TenantOperations::new(pool.pool());
+    let tenant =
+        tenant_ops.create(CreateTenantInput { tenant_name: "test-tenant".to_string() }).await?;
+
+    Ok((pool, tenant.tenant_id))
 }
 
 #[tokio::test]
 async fn test_text_block_create() -> Result<()> {
-    let pool = setup_test_db().await?;
+    let (pool, _tenant_id) = setup_test_db().await?;
     let text_ops = TextBlockOperations::new(pool.pool());
 
     let input = CreateTextBlockInput {
@@ -42,7 +48,7 @@ async fn test_text_block_create() -> Result<()> {
 
 #[tokio::test]
 async fn test_text_block_deduplication() -> Result<()> {
-    let pool = setup_test_db().await?;
+    let (pool, _tenant_id) = setup_test_db().await?;
     let text_ops = TextBlockOperations::new(pool.pool());
 
     let content = "Hello, world!\n".to_string();
@@ -64,7 +70,7 @@ async fn test_text_block_deduplication() -> Result<()> {
 
 #[tokio::test]
 async fn test_text_block_get() -> Result<()> {
-    let pool = setup_test_db().await?;
+    let (pool, _tenant_id) = setup_test_db().await?;
     let text_ops = TextBlockOperations::new(pool.pool());
 
     let input = CreateTextBlockInput {
@@ -87,7 +93,7 @@ async fn test_text_block_get() -> Result<()> {
 
 #[tokio::test]
 async fn test_text_block_get_by_hash() -> Result<()> {
-    let pool = setup_test_db().await?;
+    let (pool, _tenant_id) = setup_test_db().await?;
     let text_ops = TextBlockOperations::new(pool.pool());
 
     let input = CreateTextBlockInput {
@@ -110,7 +116,7 @@ async fn test_text_block_get_by_hash() -> Result<()> {
 
 #[tokio::test]
 async fn test_text_block_ref_count() -> Result<()> {
-    let pool = setup_test_db().await?;
+    let (pool, _tenant_id) = setup_test_db().await?;
     let text_ops = TextBlockOperations::new(pool.pool());
 
     let input = CreateTextBlockInput {
@@ -148,10 +154,9 @@ async fn test_text_block_ref_count() -> Result<()> {
 
 #[tokio::test]
 async fn test_text_file_metadata_create() -> Result<()> {
-    let pool = setup_test_db().await?;
+    let (pool, tenant_id) = setup_test_db().await?;
     let text_ops = TextBlockOperations::new(pool.pool());
 
-    let tenant_id = Uuid::new_v4();
     let layer_id = Uuid::new_v4();
 
     let input = CreateTextMetadataInput {
@@ -179,10 +184,9 @@ async fn test_text_file_metadata_create() -> Result<()> {
 
 #[tokio::test]
 async fn test_text_file_metadata_get() -> Result<()> {
-    let pool = setup_test_db().await?;
+    let (pool, tenant_id) = setup_test_db().await?;
     let text_ops = TextBlockOperations::new(pool.pool());
 
-    let tenant_id = Uuid::new_v4();
     let layer_id = Uuid::new_v4();
     let inode_id = 456;
 
@@ -212,10 +216,9 @@ async fn test_text_file_metadata_get() -> Result<()> {
 
 #[tokio::test]
 async fn test_text_line_mappings() -> Result<()> {
-    let pool = setup_test_db().await?;
+    let (pool, tenant_id) = setup_test_db().await?;
     let text_ops = TextBlockOperations::new(pool.pool());
 
-    let tenant_id = Uuid::new_v4();
     let layer_id = Uuid::new_v4();
     let inode_id = 789;
 
@@ -269,7 +272,7 @@ async fn test_text_line_mappings() -> Result<()> {
 
 #[tokio::test]
 async fn test_text_block_multiline() -> Result<()> {
-    let pool = setup_test_db().await?;
+    let (pool, _tenant_id) = setup_test_db().await?;
     let text_ops = TextBlockOperations::new(pool.pool());
 
     // Create a block with multiple lines
@@ -288,10 +291,9 @@ async fn test_text_block_multiline() -> Result<()> {
 
 #[tokio::test]
 async fn test_text_line_mapping_with_block_offsets() -> Result<()> {
-    let pool = setup_test_db().await?;
+    let (pool, tenant_id) = setup_test_db().await?;
     let text_ops = TextBlockOperations::new(pool.pool());
 
-    let tenant_id = Uuid::new_v4();
     let layer_id = Uuid::new_v4();
     let inode_id = 999;
 
@@ -337,10 +339,9 @@ async fn test_text_line_mapping_with_block_offsets() -> Result<()> {
 
 #[tokio::test]
 async fn test_empty_line_mappings() -> Result<()> {
-    let pool = setup_test_db().await?;
+    let (pool, tenant_id) = setup_test_db().await?;
     let text_ops = TextBlockOperations::new(pool.pool());
 
-    let tenant_id = Uuid::new_v4();
     let layer_id = Uuid::new_v4();
     let inode_id = 111;
 

@@ -2,11 +2,12 @@ use anyhow::Result;
 use chrono::Utc;
 use tarbox::config::DatabaseConfig;
 use tarbox::storage::{
-    AuditLogOperations, AuditLogRepository, CreateAuditLogInput, DatabasePool, QueryAuditLogsInput,
+    AuditLogOperations, AuditLogRepository, CreateAuditLogInput, CreateTenantInput, DatabasePool,
+    QueryAuditLogsInput, TenantOperations, TenantRepository,
 };
 use uuid::Uuid;
 
-async fn setup_test_db() -> Result<DatabasePool> {
+async fn setup_test_db() -> Result<(DatabasePool, Uuid)> {
     let config = DatabaseConfig {
         url: std::env::var("DATABASE_URL")
             .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/tarbox".into()),
@@ -16,15 +17,19 @@ async fn setup_test_db() -> Result<DatabasePool> {
 
     let pool = DatabasePool::new(&config).await?;
     pool.run_migrations().await?;
-    Ok(pool)
+
+    // Create test tenant
+    let tenant_ops = TenantOperations::new(pool.pool());
+    let tenant =
+        tenant_ops.create(CreateTenantInput { tenant_name: "test-tenant".to_string() }).await?;
+
+    Ok((pool, tenant.tenant_id))
 }
 
 #[tokio::test]
 async fn test_audit_log_create() -> Result<()> {
-    let pool = setup_test_db().await?;
+    let (pool, tenant_id) = setup_test_db().await?;
     let audit_ops = AuditLogOperations::new(pool.pool());
-
-    let tenant_id = Uuid::new_v4();
 
     let input = CreateAuditLogInput {
         tenant_id,
@@ -59,10 +64,8 @@ async fn test_audit_log_create() -> Result<()> {
 
 #[tokio::test]
 async fn test_audit_log_batch_create() -> Result<()> {
-    let pool = setup_test_db().await?;
+    let (pool, tenant_id) = setup_test_db().await?;
     let audit_ops = AuditLogOperations::new(pool.pool());
-
-    let tenant_id = Uuid::new_v4();
 
     let inputs = vec![
         CreateAuditLogInput {
@@ -132,10 +135,8 @@ async fn test_audit_log_batch_create() -> Result<()> {
 
 #[tokio::test]
 async fn test_audit_log_query() -> Result<()> {
-    let pool = setup_test_db().await?;
+    let (pool, tenant_id) = setup_test_db().await?;
     let audit_ops = AuditLogOperations::new(pool.pool());
-
-    let tenant_id = Uuid::new_v4();
 
     // Create some test logs
     let inputs = vec![
@@ -216,10 +217,9 @@ async fn test_audit_log_query() -> Result<()> {
 
 #[tokio::test]
 async fn test_audit_log_aggregate_stats() -> Result<()> {
-    let pool = setup_test_db().await?;
+    let (pool, tenant_id) = setup_test_db().await?;
     let audit_ops = AuditLogOperations::new(pool.pool());
 
-    let tenant_id = Uuid::new_v4();
     let start_time = Utc::now();
 
     // Create test logs with various operations
@@ -302,10 +302,8 @@ async fn test_audit_log_aggregate_stats() -> Result<()> {
 
 #[tokio::test]
 async fn test_audit_log_query_with_filters() -> Result<()> {
-    let pool = setup_test_db().await?;
+    let (pool, tenant_id) = setup_test_db().await?;
     let audit_ops = AuditLogOperations::new(pool.pool());
-
-    let tenant_id = Uuid::new_v4();
 
     // Create test logs
     let inputs = vec![
