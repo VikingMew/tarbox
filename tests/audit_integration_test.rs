@@ -18,10 +18,10 @@ async fn setup_test_db() -> Result<(DatabasePool, Uuid)> {
     let pool = DatabasePool::new(&config).await?;
     pool.run_migrations().await?;
 
-    // Create test tenant
+    // Create test tenant with unique name to avoid conflicts when tests run in parallel
     let tenant_ops = TenantOperations::new(pool.pool());
-    let tenant =
-        tenant_ops.create(CreateTenantInput { tenant_name: "test-tenant".to_string() }).await?;
+    let unique_name = format!("test-tenant-{}", Uuid::new_v4());
+    let tenant = tenant_ops.create(CreateTenantInput { tenant_name: unique_name }).await?;
 
     Ok((pool, tenant.tenant_id))
 }
@@ -33,7 +33,7 @@ async fn test_audit_log_create() -> Result<()> {
 
     let input = CreateAuditLogInput {
         tenant_id,
-        inode_id: Some(123),
+        inode_id: None,
         operation: "write".to_string(),
         uid: 1000,
         gid: 1000,
@@ -70,7 +70,7 @@ async fn test_audit_log_batch_create() -> Result<()> {
     let inputs = vec![
         CreateAuditLogInput {
             tenant_id,
-            inode_id: Some(1),
+            inode_id: None,
             operation: "read".to_string(),
             uid: 1000,
             gid: 1000,
@@ -89,7 +89,7 @@ async fn test_audit_log_batch_create() -> Result<()> {
         },
         CreateAuditLogInput {
             tenant_id,
-            inode_id: Some(2),
+            inode_id: None,
             operation: "write".to_string(),
             uid: 1000,
             gid: 1000,
@@ -108,7 +108,7 @@ async fn test_audit_log_batch_create() -> Result<()> {
         },
         CreateAuditLogInput {
             tenant_id,
-            inode_id: Some(3),
+            inode_id: None,
             operation: "delete".to_string(),
             uid: 1000,
             gid: 1000,
@@ -142,7 +142,7 @@ async fn test_audit_log_query() -> Result<()> {
     let inputs = vec![
         CreateAuditLogInput {
             tenant_id,
-            inode_id: Some(1),
+            inode_id: None,
             operation: "read".to_string(),
             uid: 1000,
             gid: 1000,
@@ -161,7 +161,7 @@ async fn test_audit_log_query() -> Result<()> {
         },
         CreateAuditLogInput {
             tenant_id,
-            inode_id: Some(2),
+            inode_id: None,
             operation: "write".to_string(),
             uid: 1000,
             gid: 1000,
@@ -226,7 +226,7 @@ async fn test_audit_log_aggregate_stats() -> Result<()> {
     let inputs = vec![
         CreateAuditLogInput {
             tenant_id,
-            inode_id: Some(1),
+            inode_id: None,
             operation: "read".to_string(),
             uid: 1000,
             gid: 1000,
@@ -245,7 +245,7 @@ async fn test_audit_log_aggregate_stats() -> Result<()> {
         },
         CreateAuditLogInput {
             tenant_id,
-            inode_id: Some(2),
+            inode_id: None,
             operation: "write".to_string(),
             uid: 1000,
             gid: 1000,
@@ -264,7 +264,7 @@ async fn test_audit_log_aggregate_stats() -> Result<()> {
         },
         CreateAuditLogInput {
             tenant_id,
-            inode_id: Some(3),
+            inode_id: None,
             operation: "delete".to_string(),
             uid: 1000,
             gid: 1000,
@@ -309,7 +309,7 @@ async fn test_audit_log_query_with_filters() -> Result<()> {
     let inputs = vec![
         CreateAuditLogInput {
             tenant_id,
-            inode_id: Some(1),
+            inode_id: None,
             operation: "read".to_string(),
             uid: 1000,
             gid: 1000,
@@ -328,7 +328,7 @@ async fn test_audit_log_query_with_filters() -> Result<()> {
         },
         CreateAuditLogInput {
             tenant_id,
-            inode_id: Some(2),
+            inode_id: None,
             operation: "write".to_string(),
             uid: 2000,
             gid: 2000,
