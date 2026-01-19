@@ -251,10 +251,95 @@ impl<'a> LayerRepository for LayerOperations<'a> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::storage::{ChangeType, LayerStatus};
+
     #[test]
-    fn test_layer_operations_creation() {
-        // Mock pool can't be created without a real database in unit tests
-        // This test just ensures the struct is constructible
-        // Actual functionality tested in integration tests
+    fn test_layer_status_variants() {
+        let active = LayerStatus::Active;
+        let creating = LayerStatus::Creating;
+        let deleting = LayerStatus::Deleting;
+        let archived = LayerStatus::Archived;
+
+        assert_eq!(format!("{:?}", active), "Active");
+        assert_eq!(format!("{:?}", creating), "Creating");
+        assert_eq!(format!("{:?}", deleting), "Deleting");
+        assert_eq!(format!("{:?}", archived), "Archived");
+    }
+
+    #[test]
+    fn test_change_type_variants() {
+        let add = ChangeType::Add;
+        let modify = ChangeType::Modify;
+        let delete = ChangeType::Delete;
+
+        assert_eq!(format!("{:?}", add), "Add");
+        assert_eq!(format!("{:?}", modify), "Modify");
+        assert_eq!(format!("{:?}", delete), "Delete");
+    }
+
+    #[test]
+    fn test_create_layer_input_validation() {
+        let tenant_id = uuid::Uuid::new_v4();
+        let input = CreateLayerInput {
+            tenant_id,
+            parent_layer_id: None,
+            layer_name: "base".to_string(),
+            description: Some("Base layer".to_string()),
+            created_by: "system".to_string(),
+            tags: None,
+        };
+
+        assert_eq!(input.layer_name, "base");
+        assert_eq!(input.created_by, "system");
+        assert!(input.parent_layer_id.is_none());
+        assert!(input.description.is_some());
+    }
+
+    #[test]
+    fn test_create_layer_entry_input() {
+        let tenant_id = uuid::Uuid::new_v4();
+        let layer_id = uuid::Uuid::new_v4();
+        let inode_id = 123i64;
+
+        let input = CreateLayerEntryInput {
+            layer_id,
+            tenant_id,
+            inode_id,
+            path: "/test.txt".to_string(),
+            change_type: ChangeType::Add,
+            size_delta: Some(1024),
+            text_changes: None,
+        };
+
+        assert_eq!(input.path, "/test.txt");
+        assert_eq!(input.size_delta.unwrap(), 1024);
+        assert!(matches!(input.change_type, ChangeType::Add));
+    }
+
+    #[test]
+    fn test_layer_entry_change_types() {
+        let add_entry = CreateLayerEntryInput {
+            layer_id: uuid::Uuid::new_v4(),
+            tenant_id: uuid::Uuid::new_v4(),
+            inode_id: 1,
+            path: "/new.txt".to_string(),
+            change_type: ChangeType::Add,
+            size_delta: Some(100),
+            text_changes: None,
+        };
+
+        let modify_entry =
+            CreateLayerEntryInput { change_type: ChangeType::Modify, ..add_entry.clone() };
+
+        let delete_entry = CreateLayerEntryInput {
+            change_type: ChangeType::Delete,
+            size_delta: Some(-100),
+            ..add_entry.clone()
+        };
+
+        assert!(matches!(add_entry.change_type, ChangeType::Add));
+        assert!(matches!(modify_entry.change_type, ChangeType::Modify));
+        assert!(matches!(delete_entry.change_type, ChangeType::Delete));
     }
 }

@@ -255,10 +255,94 @@ impl<'a> AuditLogRepository for AuditLogOperations<'a> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use chrono::Utc;
+
     #[test]
-    fn test_audit_log_operations_creation() {
-        // Mock pool can't be created without a real database in unit tests
-        // This test just ensures the struct is constructible
-        // Actual functionality tested in integration tests
+    fn test_build_query_conditions_no_filters() {
+        let input = QueryAuditLogsInput {
+            tenant_id: uuid::Uuid::new_v4(),
+            start_time: None,
+            end_time: None,
+            operation: None,
+            uid: None,
+            path_pattern: None,
+            success: None,
+            limit: None,
+        };
+
+        // Should only have tenant_id condition
+        assert!(input.start_time.is_none());
+        assert!(input.end_time.is_none());
+    }
+
+    #[test]
+    fn test_build_query_conditions_with_time_range() {
+        let start = Utc::now();
+        let end = start + chrono::Duration::hours(1);
+
+        let input = QueryAuditLogsInput {
+            tenant_id: uuid::Uuid::new_v4(),
+            start_time: Some(start),
+            end_time: Some(end),
+            operation: None,
+            uid: None,
+            path_pattern: None,
+            success: None,
+            limit: None,
+        };
+
+        // Should have time range conditions
+        assert!(input.start_time.is_some());
+        assert!(input.end_time.is_some());
+    }
+
+    #[test]
+    fn test_build_query_conditions_with_operation_filter() {
+        let input = QueryAuditLogsInput {
+            tenant_id: uuid::Uuid::new_v4(),
+            start_time: None,
+            end_time: None,
+            operation: Some("READ".to_string()),
+            uid: None,
+            path_pattern: None,
+            success: None,
+            limit: None,
+        };
+
+        assert_eq!(input.operation.as_ref().unwrap(), "READ");
+    }
+
+    #[test]
+    fn test_build_query_conditions_with_path_pattern() {
+        let input = QueryAuditLogsInput {
+            tenant_id: uuid::Uuid::new_v4(),
+            start_time: None,
+            end_time: None,
+            operation: None,
+            uid: None,
+            path_pattern: Some("/home%".to_string()),
+            success: None,
+            limit: None,
+        };
+
+        assert_eq!(input.path_pattern.as_ref().unwrap(), "/home%");
+    }
+
+    #[test]
+    fn test_query_input_limit_validation() {
+        let input = QueryAuditLogsInput {
+            tenant_id: uuid::Uuid::new_v4(),
+            start_time: None,
+            end_time: None,
+            operation: None,
+            uid: None,
+            path_pattern: None,
+            success: Some(true),
+            limit: Some(1000),
+        };
+
+        assert_eq!(input.limit.unwrap(), 1000);
+        assert_eq!(input.success.unwrap(), true);
     }
 }

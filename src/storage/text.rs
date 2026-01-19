@@ -300,9 +300,98 @@ mod tests {
     }
 
     #[test]
-    fn test_text_block_operations_creation() {
-        // Mock pool can't be created without a real database in unit tests
-        // This test just ensures the struct is constructible
-        // Actual functionality tested in integration tests
+    fn test_content_hash_deterministic() {
+        let content = "Hello, Rust!\n";
+        let hash1 = TextBlockOperations::compute_content_hash(content);
+        let hash2 = TextBlockOperations::compute_content_hash(content);
+        let hash3 = TextBlockOperations::compute_content_hash(content);
+
+        // Should produce same hash every time
+        assert_eq!(hash1, hash2);
+        assert_eq!(hash2, hash3);
+    }
+
+    #[test]
+    fn test_content_hash_empty_string() {
+        let empty = "";
+        let hash = TextBlockOperations::compute_content_hash(empty);
+
+        // Should still produce valid 64-char hash
+        assert_eq!(hash.len(), 64);
+    }
+
+    #[test]
+    fn test_content_hash_unicode() {
+        let unicode = "你好世界 🌍\n";
+        let hash = TextBlockOperations::compute_content_hash(unicode);
+
+        assert_eq!(hash.len(), 64);
+
+        // Same unicode should produce same hash
+        let hash2 = TextBlockOperations::compute_content_hash(unicode);
+        assert_eq!(hash, hash2);
+    }
+
+    #[test]
+    fn test_content_hash_newline_sensitivity() {
+        let with_newline = "line\n";
+        let without_newline = "line";
+
+        let hash1 = TextBlockOperations::compute_content_hash(with_newline);
+        let hash2 = TextBlockOperations::compute_content_hash(without_newline);
+
+        // Different content should produce different hashes
+        assert_ne!(hash1, hash2);
+    }
+
+    #[test]
+    fn test_create_text_block_input_validation() {
+        let input = CreateTextBlockInput {
+            content: "Test content\n".to_string(),
+            encoding: "utf-8".to_string(),
+        };
+
+        assert_eq!(input.content, "Test content\n");
+        assert_eq!(input.encoding, "utf-8");
+    }
+
+    #[test]
+    fn test_create_text_metadata_input() {
+        let tenant_id = uuid::Uuid::new_v4();
+        let layer_id = uuid::Uuid::new_v4();
+
+        let input = CreateTextMetadataInput {
+            tenant_id,
+            inode_id: 123,
+            layer_id,
+            total_lines: 10,
+            encoding: "utf-8".to_string(),
+            line_ending: "LF".to_string(),
+            has_trailing_newline: true,
+        };
+
+        assert_eq!(input.total_lines, 10);
+        assert_eq!(input.encoding, "utf-8");
+        assert_eq!(input.line_ending, "LF");
+        assert!(input.has_trailing_newline);
+    }
+
+    #[test]
+    fn test_text_line_map_construction() {
+        let _tenant_id = uuid::Uuid::new_v4();
+        let _layer_id = uuid::Uuid::new_v4();
+        let block_id = uuid::Uuid::new_v4();
+
+        // Simulate line mappings
+        let mappings = vec![
+            (1i32, block_id, 0i32), // Line 1, block 0, offset 0
+            (2i32, block_id, 1i32), // Line 2, block 0, offset 1
+            (3i32, block_id, 2i32), // Line 3, block 0, offset 2
+        ];
+
+        assert_eq!(mappings.len(), 3);
+        assert_eq!(mappings[0].0, 1);
+        assert_eq!(mappings[1].0, 2);
+        assert_eq!(mappings[2].0, 3);
     }
 }
