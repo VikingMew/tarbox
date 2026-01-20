@@ -2,10 +2,16 @@
 //
 // This adapter implements the fuser::Filesystem trait and delegates all operations
 // to the async FilesystemInterface implementation. It handles:
-// - Async to sync conversion using tokio runtime
+// - Async to sync conversion using a dedicated tokio runtime
 // - Inode to path mapping
 // - FUSE types to FilesystemInterface types conversion
 // - Error code translation
+//
+// IMPORTANT: The adapter uses its own dedicated runtime to avoid deadlocks.
+// FUSE callbacks are synchronous, but our backend is async. If we used the
+// caller's runtime (via Handle::current()), calling block_on() inside a
+// runtime context would cause a deadlock. By creating a dedicated runtime,
+// we ensure FUSE operations can safely block without affecting the caller.
 
 use super::interface::{FileAttr, FilesystemInterface, FsError, SetAttr};
 use fuser::{
@@ -16,15 +22,20 @@ use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tokio::runtime::Handle;
+use tokio::runtime::Runtime;
 
 /// FUSE adapter that bridges sync FUSE callbacks to async FilesystemInterface
+///
+/// This adapter owns a dedicated tokio runtime to safely bridge sync FUSE
+/// callbacks to async backend operations without risking deadlocks.
 pub struct FuseAdapter {
     /// The underlying filesystem implementation
     backend: Arc<dyn FilesystemInterface>,
 
-    /// Tokio runtime handle for async operations
-    runtime: Handle,
+    /// Dedicated tokio runtime for async operations
+    /// Using a dedicated runtime (not Handle) avoids deadlocks when
+    /// the caller is already inside a tokio runtime context.
+    runtime: Arc<Runtime>,
 
     /// Inode to path mapping
     /// FUSE uses inodes, but our backend uses paths
@@ -89,8 +100,33 @@ impl InodeMap {
 }
 
 impl FuseAdapter {
-    /// Create a new FUSE adapter
-    pub fn new(backend: Arc<dyn FilesystemInterface>, runtime: Handle) -> Self {
+    /// Create a new FUSE adapter with a dedicated runtime
+    ///
+    /// The adapter creates and owns a dedicated tokio runtime to safely
+    /// bridge sync FUSE callbacks to async backend operations.
+    pub fn new(backend: Arc<dyn FilesystemInterface>) -> Self {
+        // Create a dedicated runtime for FUSE operations
+        // This avoids deadlocks when the caller is already in a tokio runtime
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(4)
+            .thread_name("tarbox-fuse")
+            .enable_all()
+            .build()
+            .expect("Failed to create FUSE runtime");
+
+        Self {
+            backend,
+            runtime: Arc::new(runtime),
+            inode_map: Arc::new(RwLock::new(InodeMap::new())),
+        }
+    }
+
+    /// Create a new FUSE adapter with a provided runtime
+    ///
+    /// Use this when you want to provide your own runtime (e.g., for testing).
+    /// WARNING: If the provided runtime is the same as the caller's runtime,
+    /// this may cause deadlocks. Only use this if you know what you're doing.
+    pub fn with_runtime(backend: Arc<dyn FilesystemInterface>, runtime: Arc<Runtime>) -> Self {
         Self { backend, runtime, inode_map: Arc::new(RwLock::new(InodeMap::new())) }
     }
 

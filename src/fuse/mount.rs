@@ -6,7 +6,6 @@ use super::{FuseAdapter, TarboxBackend};
 use anyhow::{Context, Result};
 use std::path::Path;
 use std::sync::Arc;
-use tokio::runtime::Handle;
 
 /// Mount options for FUSE filesystem
 #[derive(Debug, Clone)]
@@ -77,6 +76,11 @@ impl MountOptions {
 ///
 /// # Returns
 /// A session handle that keeps the filesystem mounted until dropped
+///
+/// # Note
+/// The FUSE adapter creates its own dedicated tokio runtime internally.
+/// This allows the mount function to be called from any context (sync or async)
+/// without risk of deadlocks.
 pub fn mount(
     backend: Arc<TarboxBackend>,
     mountpoint: impl AsRef<Path>,
@@ -93,11 +97,9 @@ pub fn mount(
         anyhow::bail!("Mount point is not a directory: {}", mountpoint.display());
     }
 
-    // Get current runtime handle
-    let runtime = Handle::current();
-
-    // Create FUSE adapter
-    let adapter = FuseAdapter::new(backend, runtime);
+    // Create FUSE adapter with its own dedicated runtime
+    // The adapter manages its own runtime to avoid deadlocks when called from async context
+    let adapter = FuseAdapter::new(backend);
 
     // Convert mount options
     let fuser_options = options.to_fuser_options();
