@@ -1,9 +1,9 @@
 use anyhow::Result;
 use tarbox::config::DatabaseConfig;
 use tarbox::storage::{
-    CreateLayerInput, CreateTenantInput, CreateTextBlockInput, CreateTextMetadataInput,
-    DatabasePool, LayerOperations, LayerRepository, TenantOperations, TenantRepository,
-    TextBlockOperations, TextBlockRepository,
+    CreateInodeInput, CreateLayerInput, CreateTenantInput, CreateTextBlockInput,
+    CreateTextMetadataInput, DatabasePool, InodeOperations, InodeType, LayerOperations,
+    LayerRepository, TenantOperations, TenantRepository, TextBlockOperations, TextBlockRepository,
 };
 use uuid::Uuid;
 
@@ -158,6 +158,24 @@ async fn test_text_file_metadata_create() -> Result<()> {
     let (pool, tenant_id) = setup_test_db().await?;
     let text_ops = TextBlockOperations::new(pool.pool());
     let layer_ops = LayerOperations::new(pool.pool());
+    let inode_ops = InodeOperations::new(pool.pool());
+
+    // Get root inode
+    let tenant_ops = TenantOperations::new(pool.pool());
+    let tenant = tenant_ops.get_by_id(tenant_id).await?.expect("Tenant should exist");
+
+    // Create a real inode
+    let inode = inode_ops
+        .create(CreateInodeInput {
+            tenant_id,
+            parent_id: Some(tenant.root_inode_id),
+            name: "test.txt".to_string(),
+            inode_type: InodeType::File,
+            mode: 0o644,
+            uid: 1000,
+            gid: 1000,
+        })
+        .await?;
 
     // Create a real layer
     let layer = layer_ops
@@ -173,7 +191,7 @@ async fn test_text_file_metadata_create() -> Result<()> {
 
     let input = CreateTextMetadataInput {
         tenant_id,
-        inode_id: 123,
+        inode_id: inode.inode_id,
         layer_id: layer.layer_id,
         total_lines: 10,
         encoding: "UTF-8".to_string(),
@@ -184,7 +202,7 @@ async fn test_text_file_metadata_create() -> Result<()> {
     let metadata = text_ops.create_metadata(input).await?;
 
     assert_eq!(metadata.tenant_id, tenant_id);
-    assert_eq!(metadata.inode_id, 123);
+    assert_eq!(metadata.inode_id, inode.inode_id);
     assert_eq!(metadata.layer_id, layer.layer_id);
     assert_eq!(metadata.total_lines, 10);
     assert_eq!(metadata.encoding, "UTF-8");
@@ -199,6 +217,24 @@ async fn test_text_file_metadata_get() -> Result<()> {
     let (pool, tenant_id) = setup_test_db().await?;
     let text_ops = TextBlockOperations::new(pool.pool());
     let layer_ops = LayerOperations::new(pool.pool());
+    let inode_ops = InodeOperations::new(pool.pool());
+
+    // Get root inode
+    let tenant_ops = TenantOperations::new(pool.pool());
+    let tenant = tenant_ops.get_by_id(tenant_id).await?.expect("Tenant should exist");
+
+    // Create a real inode
+    let inode = inode_ops
+        .create(CreateInodeInput {
+            tenant_id,
+            parent_id: Some(tenant.root_inode_id),
+            name: "test-get.txt".to_string(),
+            inode_type: InodeType::File,
+            mode: 0o644,
+            uid: 1000,
+            gid: 1000,
+        })
+        .await?;
 
     // Create a real layer
     let layer = layer_ops
@@ -212,11 +248,9 @@ async fn test_text_file_metadata_get() -> Result<()> {
         })
         .await?;
 
-    let inode_id = 456;
-
     let input = CreateTextMetadataInput {
         tenant_id,
-        inode_id,
+        inode_id: inode.inode_id,
         layer_id: layer.layer_id,
         total_lines: 5,
         encoding: "UTF-8".to_string(),
@@ -227,7 +261,7 @@ async fn test_text_file_metadata_get() -> Result<()> {
     text_ops.create_metadata(input).await?;
 
     // Get metadata
-    let found = text_ops.get_metadata(tenant_id, inode_id, layer.layer_id).await?;
+    let found = text_ops.get_metadata(tenant_id, inode.inode_id, layer.layer_id).await?;
     assert!(found.is_some());
 
     let metadata = found.unwrap();
@@ -243,6 +277,24 @@ async fn test_text_line_mappings() -> Result<()> {
     let (pool, tenant_id) = setup_test_db().await?;
     let text_ops = TextBlockOperations::new(pool.pool());
     let layer_ops = LayerOperations::new(pool.pool());
+    let inode_ops = InodeOperations::new(pool.pool());
+
+    // Get root inode
+    let tenant_ops = TenantOperations::new(pool.pool());
+    let tenant = tenant_ops.get_by_id(tenant_id).await?.expect("Tenant should exist");
+
+    // Create a real inode
+    let inode = inode_ops
+        .create(CreateInodeInput {
+            tenant_id,
+            parent_id: Some(tenant.root_inode_id),
+            name: "test-mappings.txt".to_string(),
+            inode_type: InodeType::File,
+            mode: 0o644,
+            uid: 1000,
+            gid: 1000,
+        })
+        .await?;
 
     // Create a real layer
     let layer = layer_ops
@@ -256,12 +308,10 @@ async fn test_text_line_mappings() -> Result<()> {
         })
         .await?;
 
-    let inode_id = 789;
-
     // Create metadata first
     let metadata_input = CreateTextMetadataInput {
         tenant_id,
-        inode_id,
+        inode_id: inode.inode_id,
         layer_id: layer.layer_id,
         total_lines: 3,
         encoding: "UTF-8".to_string(),
@@ -287,11 +337,11 @@ async fn test_text_line_mappings() -> Result<()> {
     let mappings = vec![(1, block1.block_id, 0), (2, block2.block_id, 0), (3, block3.block_id, 0)];
 
     let count =
-        text_ops.create_line_mappings(tenant_id, inode_id, layer.layer_id, mappings).await?;
+        text_ops.create_line_mappings(tenant_id, inode.inode_id, layer.layer_id, mappings).await?;
     assert_eq!(count, 3);
 
     // Get line mappings
-    let retrieved = text_ops.get_line_mappings(tenant_id, inode_id, layer.layer_id).await?;
+    let retrieved = text_ops.get_line_mappings(tenant_id, inode.inode_id, layer.layer_id).await?;
     assert_eq!(retrieved.len(), 3);
 
     // Verify order and content
@@ -331,6 +381,24 @@ async fn test_text_line_mapping_with_block_offsets() -> Result<()> {
     let (pool, tenant_id) = setup_test_db().await?;
     let text_ops = TextBlockOperations::new(pool.pool());
     let layer_ops = LayerOperations::new(pool.pool());
+    let inode_ops = InodeOperations::new(pool.pool());
+
+    // Get root inode
+    let tenant_ops = TenantOperations::new(pool.pool());
+    let tenant = tenant_ops.get_by_id(tenant_id).await?.expect("Tenant should exist");
+
+    // Create a real inode
+    let inode = inode_ops
+        .create(CreateInodeInput {
+            tenant_id,
+            parent_id: Some(tenant.root_inode_id),
+            name: "test-offsets.txt".to_string(),
+            inode_type: InodeType::File,
+            mode: 0o644,
+            uid: 1000,
+            gid: 1000,
+        })
+        .await?;
 
     // Create a real layer
     let layer = layer_ops
@@ -344,12 +412,10 @@ async fn test_text_line_mapping_with_block_offsets() -> Result<()> {
         })
         .await?;
 
-    let inode_id = 999;
-
     // Create metadata
     let metadata_input = CreateTextMetadataInput {
         tenant_id,
-        inode_id,
+        inode_id: inode.inode_id,
         layer_id: layer.layer_id,
         total_lines: 5,
         encoding: "UTF-8".to_string(),
@@ -373,11 +439,11 @@ async fn test_text_line_mapping_with_block_offsets() -> Result<()> {
     ];
 
     let count =
-        text_ops.create_line_mappings(tenant_id, inode_id, layer.layer_id, mappings).await?;
+        text_ops.create_line_mappings(tenant_id, inode.inode_id, layer.layer_id, mappings).await?;
     assert_eq!(count, 3);
 
     // Retrieve and verify
-    let retrieved = text_ops.get_line_mappings(tenant_id, inode_id, layer.layer_id).await?;
+    let retrieved = text_ops.get_line_mappings(tenant_id, inode.inode_id, layer.layer_id).await?;
     assert_eq!(retrieved.len(), 3);
 
     assert_eq!(retrieved[0].block_line_offset, 0);
