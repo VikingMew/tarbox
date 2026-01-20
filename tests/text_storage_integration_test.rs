@@ -1,8 +1,9 @@
 use anyhow::Result;
 use tarbox::config::DatabaseConfig;
 use tarbox::storage::{
-    CreateTenantInput, CreateTextBlockInput, CreateTextMetadataInput, DatabasePool,
-    TenantOperations, TenantRepository, TextBlockOperations, TextBlockRepository,
+    CreateLayerInput, CreateTenantInput, CreateTextBlockInput, CreateTextMetadataInput,
+    DatabasePool, LayerOperations, LayerRepository, TenantOperations, TenantRepository,
+    TextBlockOperations, TextBlockRepository,
 };
 use uuid::Uuid;
 
@@ -156,13 +157,24 @@ async fn test_text_block_ref_count() -> Result<()> {
 async fn test_text_file_metadata_create() -> Result<()> {
     let (pool, tenant_id) = setup_test_db().await?;
     let text_ops = TextBlockOperations::new(pool.pool());
+    let layer_ops = LayerOperations::new(pool.pool());
 
-    let layer_id = Uuid::new_v4();
+    // Create a real layer
+    let layer = layer_ops
+        .create(CreateLayerInput {
+            tenant_id,
+            parent_layer_id: None,
+            layer_name: "test-layer".to_string(),
+            description: Some("Test layer for text metadata".to_string()),
+            tags: None,
+            created_by: "test".to_string(),
+        })
+        .await?;
 
     let input = CreateTextMetadataInput {
         tenant_id,
         inode_id: 123,
-        layer_id,
+        layer_id: layer.layer_id,
         total_lines: 10,
         encoding: "UTF-8".to_string(),
         line_ending: "LF".to_string(),
@@ -173,7 +185,7 @@ async fn test_text_file_metadata_create() -> Result<()> {
 
     assert_eq!(metadata.tenant_id, tenant_id);
     assert_eq!(metadata.inode_id, 123);
-    assert_eq!(metadata.layer_id, layer_id);
+    assert_eq!(metadata.layer_id, layer.layer_id);
     assert_eq!(metadata.total_lines, 10);
     assert_eq!(metadata.encoding, "UTF-8");
     assert_eq!(metadata.line_ending, "LF");
@@ -186,14 +198,26 @@ async fn test_text_file_metadata_create() -> Result<()> {
 async fn test_text_file_metadata_get() -> Result<()> {
     let (pool, tenant_id) = setup_test_db().await?;
     let text_ops = TextBlockOperations::new(pool.pool());
+    let layer_ops = LayerOperations::new(pool.pool());
 
-    let layer_id = Uuid::new_v4();
+    // Create a real layer
+    let layer = layer_ops
+        .create(CreateLayerInput {
+            tenant_id,
+            parent_layer_id: None,
+            layer_name: "test-layer-get".to_string(),
+            description: Some("Test layer for get metadata".to_string()),
+            tags: None,
+            created_by: "test".to_string(),
+        })
+        .await?;
+
     let inode_id = 456;
 
     let input = CreateTextMetadataInput {
         tenant_id,
         inode_id,
-        layer_id,
+        layer_id: layer.layer_id,
         total_lines: 5,
         encoding: "UTF-8".to_string(),
         line_ending: "CRLF".to_string(),
@@ -203,7 +227,7 @@ async fn test_text_file_metadata_get() -> Result<()> {
     text_ops.create_metadata(input).await?;
 
     // Get metadata
-    let found = text_ops.get_metadata(tenant_id, inode_id, layer_id).await?;
+    let found = text_ops.get_metadata(tenant_id, inode_id, layer.layer_id).await?;
     assert!(found.is_some());
 
     let metadata = found.unwrap();
@@ -218,15 +242,27 @@ async fn test_text_file_metadata_get() -> Result<()> {
 async fn test_text_line_mappings() -> Result<()> {
     let (pool, tenant_id) = setup_test_db().await?;
     let text_ops = TextBlockOperations::new(pool.pool());
+    let layer_ops = LayerOperations::new(pool.pool());
 
-    let layer_id = Uuid::new_v4();
+    // Create a real layer
+    let layer = layer_ops
+        .create(CreateLayerInput {
+            tenant_id,
+            parent_layer_id: None,
+            layer_name: "test-layer-mappings".to_string(),
+            description: Some("Test layer for line mappings".to_string()),
+            tags: None,
+            created_by: "test".to_string(),
+        })
+        .await?;
+
     let inode_id = 789;
 
     // Create metadata first
     let metadata_input = CreateTextMetadataInput {
         tenant_id,
         inode_id,
-        layer_id,
+        layer_id: layer.layer_id,
         total_lines: 3,
         encoding: "UTF-8".to_string(),
         line_ending: "LF".to_string(),
@@ -250,11 +286,12 @@ async fn test_text_line_mappings() -> Result<()> {
     // Create line mappings
     let mappings = vec![(1, block1.block_id, 0), (2, block2.block_id, 0), (3, block3.block_id, 0)];
 
-    let count = text_ops.create_line_mappings(tenant_id, inode_id, layer_id, mappings).await?;
+    let count =
+        text_ops.create_line_mappings(tenant_id, inode_id, layer.layer_id, mappings).await?;
     assert_eq!(count, 3);
 
     // Get line mappings
-    let retrieved = text_ops.get_line_mappings(tenant_id, inode_id, layer_id).await?;
+    let retrieved = text_ops.get_line_mappings(tenant_id, inode_id, layer.layer_id).await?;
     assert_eq!(retrieved.len(), 3);
 
     // Verify order and content
@@ -293,15 +330,27 @@ async fn test_text_block_multiline() -> Result<()> {
 async fn test_text_line_mapping_with_block_offsets() -> Result<()> {
     let (pool, tenant_id) = setup_test_db().await?;
     let text_ops = TextBlockOperations::new(pool.pool());
+    let layer_ops = LayerOperations::new(pool.pool());
 
-    let layer_id = Uuid::new_v4();
+    // Create a real layer
+    let layer = layer_ops
+        .create(CreateLayerInput {
+            tenant_id,
+            parent_layer_id: None,
+            layer_name: "test-layer-offsets".to_string(),
+            description: Some("Test layer for block offsets".to_string()),
+            tags: None,
+            created_by: "test".to_string(),
+        })
+        .await?;
+
     let inode_id = 999;
 
     // Create metadata
     let metadata_input = CreateTextMetadataInput {
         tenant_id,
         inode_id,
-        layer_id,
+        layer_id: layer.layer_id,
         total_lines: 5,
         encoding: "UTF-8".to_string(),
         line_ending: "LF".to_string(),
@@ -323,11 +372,12 @@ async fn test_text_line_mapping_with_block_offsets() -> Result<()> {
         (3, block.block_id, 2), // Third line of block
     ];
 
-    let count = text_ops.create_line_mappings(tenant_id, inode_id, layer_id, mappings).await?;
+    let count =
+        text_ops.create_line_mappings(tenant_id, inode_id, layer.layer_id, mappings).await?;
     assert_eq!(count, 3);
 
     // Retrieve and verify
-    let retrieved = text_ops.get_line_mappings(tenant_id, inode_id, layer_id).await?;
+    let retrieved = text_ops.get_line_mappings(tenant_id, inode_id, layer.layer_id).await?;
     assert_eq!(retrieved.len(), 3);
 
     assert_eq!(retrieved[0].block_line_offset, 0);
