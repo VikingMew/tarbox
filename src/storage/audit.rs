@@ -229,7 +229,7 @@ impl<'a> AuditLogRepository for AuditLogOperations<'a> {
                 COUNT(*) FILTER (WHERE success = false) as failed_operations,
                 COALESCE(SUM(bytes_read), 0)::BIGINT as total_bytes_read,
                 COALESCE(SUM(bytes_written), 0)::BIGINT as total_bytes_written,
-                AVG(duration_ms) as avg_duration_ms
+                AVG(duration_ms)::DOUBLE PRECISION as avg_duration_ms
             FROM audit_logs
             WHERE tenant_id = $1
               AND created_at >= $2
