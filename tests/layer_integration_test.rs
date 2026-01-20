@@ -1,8 +1,9 @@
 use anyhow::Result;
 use tarbox::config::DatabaseConfig;
 use tarbox::storage::{
-    ChangeType, CreateLayerEntryInput, CreateLayerInput, CreateTenantInput, DatabasePool,
-    LayerOperations, LayerRepository, TenantOperations, TenantRepository,
+    ChangeType, CreateInodeInput, CreateLayerEntryInput, CreateLayerInput, CreateTenantInput,
+    DatabasePool, InodeOperations, InodeType, LayerOperations, LayerRepository, TenantOperations,
+    TenantRepository,
 };
 use uuid::Uuid;
 
@@ -188,6 +189,24 @@ async fn test_layer_delete() -> Result<()> {
 async fn test_layer_add_entry() -> Result<()> {
     let (pool, tenant_id) = setup_test_db().await?;
     let layer_ops = LayerOperations::new(pool.pool());
+    let inode_ops = InodeOperations::new(pool.pool());
+
+    // Get root inode from tenant
+    let tenant_ops = TenantOperations::new(pool.pool());
+    let tenant = tenant_ops.get_by_id(tenant_id).await?.expect("Tenant should exist");
+
+    // Create a test inode
+    let inode = inode_ops
+        .create(CreateInodeInput {
+            tenant_id,
+            parent_id: Some(tenant.root_inode_id),
+            name: "test.txt".to_string(),
+            inode_type: InodeType::File,
+            mode: 0o644,
+            uid: 1000,
+            gid: 1000,
+        })
+        .await?;
 
     // Create a layer
     let layer_input = CreateLayerInput {
@@ -204,7 +223,7 @@ async fn test_layer_add_entry() -> Result<()> {
     let entry_input = CreateLayerEntryInput {
         layer_id: layer.layer_id,
         tenant_id,
-        inode_id: 123,
+        inode_id: inode.inode_id,
         path: "/test/file.txt".to_string(),
         change_type: ChangeType::Add,
         size_delta: Some(1024),
@@ -225,6 +244,11 @@ async fn test_layer_add_entry() -> Result<()> {
 async fn test_layer_list_entries() -> Result<()> {
     let (pool, tenant_id) = setup_test_db().await?;
     let layer_ops = LayerOperations::new(pool.pool());
+    let inode_ops = InodeOperations::new(pool.pool());
+
+    // Get root inode from tenant
+    let tenant_ops = TenantOperations::new(pool.pool());
+    let tenant = tenant_ops.get_by_id(tenant_id).await?.expect("Tenant should exist");
 
     // Create a layer
     let layer_input = CreateLayerInput {
@@ -237,12 +261,25 @@ async fn test_layer_list_entries() -> Result<()> {
     };
     let layer = layer_ops.create(layer_input).await?;
 
-    // Add multiple entries
+    // Add multiple entries with real inodes
     for i in 1..=3 {
+        // Create inode for each entry
+        let inode = inode_ops
+            .create(CreateInodeInput {
+                tenant_id,
+                parent_id: Some(tenant.root_inode_id),
+                name: format!("file{}.txt", i),
+                inode_type: InodeType::File,
+                mode: 0o644,
+                uid: 1000,
+                gid: 1000,
+            })
+            .await?;
+
         let entry_input = CreateLayerEntryInput {
             layer_id: layer.layer_id,
             tenant_id,
-            inode_id: i,
+            inode_id: inode.inode_id,
             path: format!("/file{}.txt", i),
             change_type: ChangeType::Add,
             size_delta: Some(100 * i),
@@ -313,6 +350,48 @@ async fn test_current_layer_tracking() -> Result<()> {
 async fn test_layer_entry_change_types() -> Result<()> {
     let (pool, tenant_id) = setup_test_db().await?;
     let layer_ops = LayerOperations::new(pool.pool());
+    let inode_ops = InodeOperations::new(pool.pool());
+
+    // Get root inode from tenant
+    let tenant_ops = TenantOperations::new(pool.pool());
+    let tenant = tenant_ops.get_by_id(tenant_id).await?.expect("Tenant should exist");
+
+    // Create test inodes
+    let inode1 = inode_ops
+        .create(CreateInodeInput {
+            tenant_id,
+            parent_id: Some(tenant.root_inode_id),
+            name: "added.txt".to_string(),
+            inode_type: InodeType::File,
+            mode: 0o644,
+            uid: 1000,
+            gid: 1000,
+        })
+        .await?;
+
+    let inode2 = inode_ops
+        .create(CreateInodeInput {
+            tenant_id,
+            parent_id: Some(tenant.root_inode_id),
+            name: "modified.txt".to_string(),
+            inode_type: InodeType::File,
+            mode: 0o644,
+            uid: 1000,
+            gid: 1000,
+        })
+        .await?;
+
+    let inode3 = inode_ops
+        .create(CreateInodeInput {
+            tenant_id,
+            parent_id: Some(tenant.root_inode_id),
+            name: "deleted.txt".to_string(),
+            inode_type: InodeType::File,
+            mode: 0o644,
+            uid: 1000,
+            gid: 1000,
+        })
+        .await?;
 
     // Create a layer
     let layer_input = CreateLayerInput {
@@ -329,7 +408,7 @@ async fn test_layer_entry_change_types() -> Result<()> {
     let add_input = CreateLayerEntryInput {
         layer_id: layer.layer_id,
         tenant_id,
-        inode_id: 1,
+        inode_id: inode1.inode_id,
         path: "/added.txt".to_string(),
         change_type: ChangeType::Add,
         size_delta: Some(100),
@@ -341,7 +420,7 @@ async fn test_layer_entry_change_types() -> Result<()> {
     let modify_input = CreateLayerEntryInput {
         layer_id: layer.layer_id,
         tenant_id,
-        inode_id: 2,
+        inode_id: inode2.inode_id,
         path: "/modified.txt".to_string(),
         change_type: ChangeType::Modify,
         size_delta: Some(50),
@@ -353,7 +432,7 @@ async fn test_layer_entry_change_types() -> Result<()> {
     let delete_input = CreateLayerEntryInput {
         layer_id: layer.layer_id,
         tenant_id,
-        inode_id: 3,
+        inode_id: inode3.inode_id,
         path: "/deleted.txt".to_string(),
         change_type: ChangeType::Delete,
         size_delta: Some(-200),
