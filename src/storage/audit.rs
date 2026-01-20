@@ -227,8 +227,8 @@ impl<'a> AuditLogRepository for AuditLogOperations<'a> {
                 COUNT(*) as total_operations,
                 COUNT(*) FILTER (WHERE success = true) as successful_operations,
                 COUNT(*) FILTER (WHERE success = false) as failed_operations,
-                COALESCE(SUM(bytes_read), 0) as total_bytes_read,
-                COALESCE(SUM(bytes_written), 0) as total_bytes_written,
+                COALESCE(SUM(bytes_read), 0)::BIGINT as total_bytes_read,
+                COALESCE(SUM(bytes_written), 0)::BIGINT as total_bytes_written,
                 AVG(duration_ms) as avg_duration_ms
             FROM audit_logs
             WHERE tenant_id = $1

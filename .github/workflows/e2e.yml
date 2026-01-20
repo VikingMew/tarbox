@@ -122,8 +122,8 @@ jobs:
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/tarbox
 
-      - name: Run E2E tests - Audit Integration
-        run: cargo test --test audit_integration_test --verbose
+      - name: Run E2E tests - Audit
+        run: cargo test --test audit_e2e_test --verbose
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/tarbox
 
@@ -150,7 +150,7 @@ jobs:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/tarbox
         run: |
           cargo llvm-cov clean
-          cargo llvm-cov --lib --test filesystem_integration_test --test fuse_backend_integration_test --test storage_e2e_test --test audit_integration_test --test layer_integration_test --test text_storage_integration_test
+          cargo llvm-cov --lib --test filesystem_integration_test --test fuse_backend_integration_test --test storage_e2e_test --test audit_e2e_test --test layer_integration_test --test text_storage_integration_test
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
