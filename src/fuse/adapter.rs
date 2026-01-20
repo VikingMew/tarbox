@@ -2,16 +2,15 @@
 //
 // This adapter implements the fuser::Filesystem trait and delegates all operations
 // to the async FilesystemInterface implementation. It handles:
-// - Async to sync conversion using a dedicated tokio runtime
+// - Async to sync conversion using tokio's block_in_place
 // - Inode to path mapping
 // - FUSE types to FilesystemInterface types conversion
 // - Error code translation
 //
-// IMPORTANT: The adapter uses its own dedicated runtime to avoid deadlocks.
-// FUSE callbacks are synchronous, but our backend is async. If we used the
-// caller's runtime (via Handle::current()), calling block_on() inside a
-// runtime context would cause a deadlock. By creating a dedicated runtime,
-// we ensure FUSE operations can safely block without affecting the caller.
+// IMPORTANT: We use tokio::task::block_in_place() to safely run async operations
+// from synchronous FUSE callbacks. This allows blocking within the current runtime
+// without creating a new runtime, which is essential because resources like database
+// connection pools are bound to the runtime that created them.
 
 use super::interface::{FileAttr, FilesystemInterface, FsError, SetAttr};
 use fuser::{
@@ -22,20 +21,20 @@ use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tokio::runtime::Runtime;
+use tokio::runtime::Handle;
 
 /// FUSE adapter that bridges sync FUSE callbacks to async FilesystemInterface
 ///
-/// This adapter owns a dedicated tokio runtime to safely bridge sync FUSE
-/// callbacks to async backend operations without risking deadlocks.
+/// This adapter uses tokio::task::block_in_place to safely bridge sync FUSE
+/// callbacks to async backend operations. This keeps all operations within
+/// the same runtime, which is necessary for runtime-bound resources like
+/// database connection pools.
 pub struct FuseAdapter {
     /// The underlying filesystem implementation
     backend: Arc<dyn FilesystemInterface>,
 
-    /// Dedicated tokio runtime for async operations
-    /// Using a dedicated runtime (not Handle) avoids deadlocks when
-    /// the caller is already inside a tokio runtime context.
-    runtime: Arc<Runtime>,
+    /// Handle to the tokio runtime for async operations
+    runtime: Handle,
 
     /// Inode to path mapping
     /// FUSE uses inodes, but our backend uses paths
@@ -100,33 +99,20 @@ impl InodeMap {
 }
 
 impl FuseAdapter {
-    /// Create a new FUSE adapter with a dedicated runtime
+    /// Create a new FUSE adapter
     ///
-    /// The adapter creates and owns a dedicated tokio runtime to safely
-    /// bridge sync FUSE callbacks to async backend operations.
+    /// The adapter captures the current tokio runtime handle and uses
+    /// block_in_place to safely run async operations from sync FUSE callbacks.
+    ///
+    /// # Panics
+    /// Panics if called outside of a tokio runtime context.
     pub fn new(backend: Arc<dyn FilesystemInterface>) -> Self {
-        // Create a dedicated runtime for FUSE operations
-        // This avoids deadlocks when the caller is already in a tokio runtime
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(4)
-            .thread_name("tarbox-fuse")
-            .enable_all()
-            .build()
-            .expect("Failed to create FUSE runtime");
-
-        Self {
-            backend,
-            runtime: Arc::new(runtime),
-            inode_map: Arc::new(RwLock::new(InodeMap::new())),
-        }
+        let runtime = Handle::current();
+        Self { backend, runtime, inode_map: Arc::new(RwLock::new(InodeMap::new())) }
     }
 
-    /// Create a new FUSE adapter with a provided runtime
-    ///
-    /// Use this when you want to provide your own runtime (e.g., for testing).
-    /// WARNING: If the provided runtime is the same as the caller's runtime,
-    /// this may cause deadlocks. Only use this if you know what you're doing.
-    pub fn with_runtime(backend: Arc<dyn FilesystemInterface>, runtime: Arc<Runtime>) -> Self {
+    /// Create a new FUSE adapter with a provided runtime handle
+    pub fn with_runtime(backend: Arc<dyn FilesystemInterface>, runtime: Handle) -> Self {
         Self { backend, runtime, inode_map: Arc::new(RwLock::new(InodeMap::new())) }
     }
 
@@ -136,12 +122,18 @@ impl FuseAdapter {
         map.get_path(inode).map(|s| s.to_string()).ok_or(libc::ENOENT)
     }
 
-    /// Execute async operation in tokio runtime
+    /// Execute async operation in tokio runtime using block_in_place
+    ///
+    /// This uses block_in_place to allow blocking on the current runtime,
+    /// which is safe because FUSE runs callbacks on separate threads.
     fn block_on<F, T>(&self, future: F) -> T
     where
         F: std::future::Future<Output = T>,
     {
-        self.runtime.block_on(future)
+        // block_in_place allows us to block the current thread while still
+        // allowing the runtime to make progress on other tasks. This is safe
+        // because fuser spawns threads for handling FUSE operations.
+        tokio::task::block_in_place(|| self.runtime.block_on(future))
     }
 
     /// Convert FsError to errno
@@ -481,8 +473,10 @@ impl Filesystem for FuseAdapter {
 
         match result {
             Ok(_) => {
-                // Remove from inode map
-                if let Some(&inode) = self.inode_map.read().unwrap().path_to_inode.get(&path) {
+                // Remove from inode map - get inode first, then remove to avoid deadlock
+                let inode_to_remove =
+                    self.inode_map.read().unwrap().path_to_inode.get(&path).copied();
+                if let Some(inode) = inode_to_remove {
                     self.inode_map.write().unwrap().remove(inode);
                 }
                 reply.ok();
@@ -614,6 +608,7 @@ impl Filesystem for FuseAdapter {
 
     /// Remove a file
     fn unlink(&mut self, _req: &Request, parent: u64, name: &OsStr, reply: ReplyEmpty) {
+        eprintln!("FUSE unlink: parent={}, name={:?}", parent, name);
         let name = match name.to_str() {
             Some(n) => n,
             None => {
@@ -640,8 +635,10 @@ impl Filesystem for FuseAdapter {
 
         match result {
             Ok(_) => {
-                // Remove from inode map
-                if let Some(&inode) = self.inode_map.read().unwrap().path_to_inode.get(&path) {
+                // Remove from inode map - get inode first, then remove
+                let inode_to_remove =
+                    self.inode_map.read().unwrap().path_to_inode.get(&path).copied();
+                if let Some(inode) = inode_to_remove {
                     self.inode_map.write().unwrap().remove(inode);
                 }
                 reply.ok();

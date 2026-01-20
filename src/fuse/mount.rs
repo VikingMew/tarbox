@@ -6,6 +6,7 @@ use super::{FuseAdapter, TarboxBackend};
 use anyhow::{Context, Result};
 use std::path::Path;
 use std::sync::Arc;
+use tokio::runtime::Handle;
 
 /// Mount options for FUSE filesystem
 #[derive(Debug, Clone)]
@@ -33,7 +34,9 @@ impl Default for MountOptions {
             allow_root: false,
             read_only: false,
             fsname: Some("tarbox".to_string()),
-            auto_unmount: true,
+            // auto_unmount requires allow_other or allow_root, which needs
+            // 'user_allow_other' in /etc/fuse.conf. Disabled by default.
+            auto_unmount: false,
         }
     }
 }
@@ -78,9 +81,13 @@ impl MountOptions {
 /// A session handle that keeps the filesystem mounted until dropped
 ///
 /// # Note
-/// The FUSE adapter creates its own dedicated tokio runtime internally.
-/// This allows the mount function to be called from any context (sync or async)
-/// without risk of deadlocks.
+/// This function must be called from within a tokio runtime context.
+/// The FUSE adapter captures the current runtime handle to execute
+/// async operations. Database connections and other runtime-bound
+/// resources will work correctly because they stay in the same runtime.
+///
+/// # Panics
+/// Panics if called outside of a tokio runtime context.
 pub fn mount(
     backend: Arc<TarboxBackend>,
     mountpoint: impl AsRef<Path>,
@@ -97,9 +104,12 @@ pub fn mount(
         anyhow::bail!("Mount point is not a directory: {}", mountpoint.display());
     }
 
-    // Create FUSE adapter with its own dedicated runtime
-    // The adapter manages its own runtime to avoid deadlocks when called from async context
-    let adapter = FuseAdapter::new(backend);
+    // Get current runtime handle - panics if not in a tokio runtime
+    let runtime = Handle::current();
+
+    // Create FUSE adapter with the current runtime handle
+    // This ensures database connections and other runtime-bound resources work correctly
+    let adapter = FuseAdapter::with_runtime(backend, runtime);
 
     // Convert mount options
     let fuser_options = options.to_fuser_options();
@@ -171,7 +181,7 @@ mod tests {
         assert!(!options.allow_root);
         assert!(!options.read_only);
         assert_eq!(options.fsname, Some("tarbox".to_string()));
-        assert!(options.auto_unmount);
+        assert!(!options.auto_unmount); // Disabled by default (requires fuse.conf config)
     }
 
     #[test]
