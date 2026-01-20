@@ -17,10 +17,10 @@ async fn setup_test_db() -> Result<(DatabasePool, Uuid)> {
     let pool = DatabasePool::new(&config).await?;
     pool.run_migrations().await?;
 
-    // Create test tenant
+    // Create test tenant with unique name to avoid conflicts when tests run in parallel
     let tenant_ops = TenantOperations::new(pool.pool());
-    let tenant =
-        tenant_ops.create(CreateTenantInput { tenant_name: "test-tenant".to_string() }).await?;
+    let unique_name = format!("test-tenant-{}", Uuid::new_v4());
+    let tenant = tenant_ops.create(CreateTenantInput { tenant_name: unique_name }).await?;
 
     Ok((pool, tenant.tenant_id))
 }
