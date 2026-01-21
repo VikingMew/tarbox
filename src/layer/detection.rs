@@ -359,4 +359,175 @@ mod tests {
             _ => panic!("Expected text file"),
         }
     }
+
+    // Additional tests for better coverage
+
+    #[test]
+    fn test_detection_config_default() {
+        let config = DetectionConfig::default();
+        assert_eq!(config.max_text_file_size, 10 * 1024 * 1024);
+        assert_eq!(config.max_line_length, 10 * 1024);
+        assert!(config.max_non_printable_ratio > 0.0);
+    }
+
+    #[test]
+    fn test_detection_config_custom() {
+        let config = DetectionConfig {
+            max_text_file_size: 1000,
+            max_line_length: 100,
+            max_non_printable_ratio: 0.1,
+            min_newline_ratio: 0.001,
+        };
+        assert_eq!(config.max_text_file_size, 1000);
+        assert_eq!(config.max_line_length, 100);
+        assert_eq!(config.max_non_printable_ratio, 0.1);
+    }
+
+    #[test]
+    fn test_file_type_info_is_text() {
+        let text_info = FileTypeInfo::Text {
+            encoding: TextEncoding::Utf8,
+            line_ending: LineEnding::Lf,
+            line_count: 10,
+        };
+        assert!(text_info.is_text());
+        assert!(!text_info.is_binary());
+    }
+
+    #[test]
+    fn test_file_type_info_is_binary() {
+        let binary_info = FileTypeInfo::Binary;
+        assert!(binary_info.is_binary());
+        assert!(!binary_info.is_text());
+    }
+
+    #[test]
+    fn test_text_encoding_variants() {
+        assert_eq!(TextEncoding::Ascii, TextEncoding::Ascii);
+        assert_eq!(TextEncoding::Utf8, TextEncoding::Utf8);
+        assert_eq!(TextEncoding::Unknown, TextEncoding::Unknown);
+        assert_ne!(TextEncoding::Ascii, TextEncoding::Utf8);
+    }
+
+    #[test]
+    fn test_line_ending_variants() {
+        assert_eq!(LineEnding::Lf, LineEnding::Lf);
+        assert_eq!(LineEnding::CrLf, LineEnding::CrLf);
+        assert_eq!(LineEnding::Cr, LineEnding::Cr);
+        assert_eq!(LineEnding::Mixed, LineEnding::Mixed);
+        assert_eq!(LineEnding::None, LineEnding::None);
+        assert_ne!(LineEnding::Lf, LineEnding::CrLf);
+    }
+
+    #[test]
+    fn test_detect_cr_only_line_ending() {
+        let detector = FileTypeDetector::new();
+        let info = detector.detect(b"Line 1\rLine 2\rLine 3\r");
+        match info {
+            FileTypeInfo::Text { line_ending, .. } => {
+                assert_eq!(line_ending, LineEnding::Cr);
+            }
+            _ => panic!("Expected text file"),
+        }
+    }
+
+    #[test]
+    fn test_detect_long_line_as_binary() {
+        let config = DetectionConfig { max_line_length: 10, ..Default::default() };
+        let detector = FileTypeDetector::with_config(config);
+        let info = detector.detect(b"This is a very long line that exceeds the maximum");
+        assert!(info.is_binary());
+    }
+
+    #[test]
+    fn test_detect_tabs_and_spaces() {
+        let detector = FileTypeDetector::new();
+        let info = detector.detect(b"Hello\tWorld\n    Indented\n");
+        assert!(info.is_text());
+    }
+
+    #[test]
+    fn test_detect_utf8_bom() {
+        let detector = FileTypeDetector::new();
+        // UTF-8 BOM: EF BB BF followed by non-ASCII content
+        let mut content = vec![0xEF, 0xBB, 0xBF];
+        content.extend_from_slice("Hello 世界\n".as_bytes());
+        let info = detector.detect(&content);
+        match info {
+            FileTypeInfo::Text { encoding, .. } => {
+                // BOM alone doesn't force UTF-8 detection, need actual UTF-8 content
+                assert_eq!(encoding, TextEncoding::Utf8);
+            }
+            _ => panic!("Expected text file with UTF-8"),
+        }
+    }
+
+    #[test]
+    fn test_detect_high_non_printable_as_binary() {
+        let config = DetectionConfig { max_non_printable_ratio: 0.01, ..Default::default() };
+        let detector = FileTypeDetector::with_config(config);
+        // Content with many control characters
+        let mut content = vec![0x01, 0x02, 0x03, 0x04, 0x05];
+        content.extend_from_slice(b"Hello");
+        let info = detector.detect(&content);
+        assert!(info.is_binary());
+    }
+
+    #[test]
+    fn test_detect_valid_utf8_multibyte() {
+        let detector = FileTypeDetector::new();
+        // Various UTF-8 characters
+        let info = detector.detect("日本語テスト\n한국어\nРусский\n".as_bytes());
+        match info {
+            FileTypeInfo::Text { encoding, line_count, .. } => {
+                assert_eq!(encoding, TextEncoding::Utf8);
+                assert_eq!(line_count, 4);
+            }
+            _ => panic!("Expected UTF-8 text file"),
+        }
+    }
+
+    #[test]
+    fn test_detect_invalid_utf8_as_binary() {
+        let detector = FileTypeDetector::new();
+        // Invalid UTF-8 sequence
+        let content = vec![0x80, 0x81, 0x82, 0x83];
+        let info = detector.detect(&content);
+        // Should be detected as binary due to invalid UTF-8
+        assert!(info.is_binary());
+    }
+
+    #[test]
+    fn test_detector_default_impl() {
+        let detector = FileTypeDetector::default();
+        let info = detector.detect(b"test");
+        assert!(info.is_text());
+    }
+
+    #[test]
+    fn test_detect_only_newlines() {
+        let detector = FileTypeDetector::new();
+        let info = detector.detect(b"\n\n\n\n");
+        match info {
+            FileTypeInfo::Text { line_ending, line_count, .. } => {
+                assert_eq!(line_ending, LineEnding::Lf);
+                assert_eq!(line_count, 5);
+            }
+            _ => panic!("Expected text file"),
+        }
+    }
+
+    #[test]
+    fn test_detect_whitespace_only() {
+        let detector = FileTypeDetector::new();
+        let info = detector.detect(b"   \t\t   \n   \t\n");
+        assert!(info.is_text());
+    }
+
+    #[test]
+    fn test_binary_simple() {
+        let info = FileTypeInfo::Binary;
+        assert!(info.is_binary());
+        assert!(!info.is_text());
+    }
 }

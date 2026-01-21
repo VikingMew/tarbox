@@ -347,12 +347,98 @@ mod tests {
     }
 
     #[test]
+    fn test_text_changes_zeros() {
+        let changes =
+            TextChanges { lines_added: 0, lines_deleted: 0, lines_modified: 0, total_lines: 0 };
+        assert_eq!(changes.lines_added, 0);
+        assert_eq!(changes.lines_deleted, 0);
+        assert_eq!(changes.lines_modified, 0);
+        assert_eq!(changes.total_lines, 0);
+    }
+
+    #[test]
+    fn test_text_changes_to_json_zeros() {
+        let changes =
+            TextChanges { lines_added: 0, lines_deleted: 0, lines_modified: 0, total_lines: 0 };
+        let json = changes.to_json();
+        assert_eq!(json["lines_added"], 0);
+        assert_eq!(json["lines_deleted"], 0);
+        assert_eq!(json["lines_modified"], 0);
+        assert_eq!(json["total_lines"], 0);
+    }
+
+    #[test]
+    fn test_text_changes_to_json_large_values() {
+        let changes = TextChanges {
+            lines_added: 100000,
+            lines_deleted: 50000,
+            lines_modified: 25000,
+            total_lines: 1000000,
+        };
+        let json = changes.to_json();
+        assert_eq!(json["lines_added"], 100000);
+        assert_eq!(json["lines_deleted"], 50000);
+        assert_eq!(json["lines_modified"], 25000);
+        assert_eq!(json["total_lines"], 1000000);
+    }
+
+    #[test]
     fn test_generate_diff() {
         let old = "line1\nline2\nline3\n";
         let new = "line1\nmodified\nline3\nline4\n";
         let diff = generate_diff(old, new);
         assert!(diff.contains("-line2"));
         assert!(diff.contains("+modified"));
+        assert!(diff.contains("+line4"));
+    }
+
+    #[test]
+    fn test_generate_diff_empty_to_content() {
+        let old = "";
+        let new = "line1\nline2\n";
+        let diff = generate_diff(old, new);
+        assert!(diff.contains("+line1"));
+        assert!(diff.contains("+line2"));
+    }
+
+    #[test]
+    fn test_generate_diff_content_to_empty() {
+        let old = "line1\nline2\n";
+        let new = "";
+        let diff = generate_diff(old, new);
+        assert!(diff.contains("-line1"));
+        assert!(diff.contains("-line2"));
+    }
+
+    #[test]
+    fn test_generate_diff_identical() {
+        let content = "line1\nline2\nline3\n";
+        let diff = generate_diff(content, content);
+        // All lines should be equal (space prefix)
+        assert!(diff.contains(" line1"));
+        assert!(diff.contains(" line2"));
+        assert!(diff.contains(" line3"));
+        // No additions or deletions
+        assert!(!diff.contains("+line"));
+        assert!(!diff.contains("-line"));
+    }
+
+    #[test]
+    fn test_generate_diff_single_line_change() {
+        let old = "hello world\n";
+        let new = "hello rust\n";
+        let diff = generate_diff(old, new);
+        assert!(diff.contains("-hello world"));
+        assert!(diff.contains("+hello rust"));
+    }
+
+    #[test]
+    fn test_generate_diff_multiline_addition() {
+        let old = "line1\n";
+        let new = "line1\nline2\nline3\nline4\n";
+        let diff = generate_diff(old, new);
+        assert!(diff.contains("+line2"));
+        assert!(diff.contains("+line3"));
         assert!(diff.contains("+line4"));
     }
 
@@ -364,5 +450,73 @@ mod tests {
 
         assert_eq!(hash1, hash2);
         assert_ne!(hash1, hash3);
+    }
+
+    #[test]
+    fn test_compute_text_hash_empty() {
+        let hash = compute_text_hash("");
+        assert!(!hash.is_empty());
+        assert_eq!(hash.len(), 16); // 16 hex chars
+    }
+
+    #[test]
+    fn test_compute_text_hash_unicode() {
+        let hash1 = compute_text_hash("你好世界");
+        let hash2 = compute_text_hash("你好世界");
+        let hash3 = compute_text_hash("こんにちは");
+
+        assert_eq!(hash1, hash2);
+        assert_ne!(hash1, hash3);
+    }
+
+    #[test]
+    fn test_compute_text_hash_whitespace_sensitive() {
+        let hash1 = compute_text_hash("hello");
+        let hash2 = compute_text_hash("hello ");
+        let hash3 = compute_text_hash(" hello");
+
+        assert_ne!(hash1, hash2);
+        assert_ne!(hash1, hash3);
+        assert_ne!(hash2, hash3);
+    }
+
+    #[test]
+    fn test_compute_text_hash_newline_sensitive() {
+        let hash1 = compute_text_hash("hello\n");
+        let hash2 = compute_text_hash("hello");
+        let hash3 = compute_text_hash("hello\r\n");
+
+        assert_ne!(hash1, hash2);
+        assert_ne!(hash1, hash3);
+    }
+
+    #[test]
+    fn test_cow_result_binary() {
+        let result = CowResult {
+            change_type: crate::storage::ChangeType::Add,
+            size_delta: 1024,
+            text_changes: None,
+            is_text: false,
+        };
+        assert!(result.text_changes.is_none());
+        assert_eq!(result.size_delta, 1024);
+        assert!(!result.is_text);
+    }
+
+    #[test]
+    fn test_cow_result_text() {
+        let changes =
+            TextChanges { lines_added: 10, lines_deleted: 5, lines_modified: 3, total_lines: 50 };
+        let result = CowResult {
+            change_type: crate::storage::ChangeType::Modify,
+            size_delta: 100,
+            text_changes: Some(changes),
+            is_text: true,
+        };
+        assert!(result.text_changes.is_some());
+        assert!(result.is_text);
+        let tc = result.text_changes.unwrap();
+        assert_eq!(tc.lines_added, 10);
+        assert_eq!(tc.lines_deleted, 5);
     }
 }

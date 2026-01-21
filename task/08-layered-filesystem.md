@@ -122,10 +122,90 @@
 
 ### 测试状态
 
-- [x] 单元测试：134 个测试全部通过
-- [x] 集成测试：全部通过
+- [x] 单元测试：192 个测试全部通过
+- [x] 集成测试：21 个 layer 集成测试全部通过
 - [x] fmt 检查通过
 - [x] clippy 检查通过
+
+### 测试覆盖率
+
+**整体覆盖率**: 66.67%
+
+#### Layer 模块覆盖率详情
+
+| 模块 | 行覆盖率 | 说明 |
+|------|---------|------|
+| `layer/manager.rs` | 96.92% ✅ | 层管理器，集成测试覆盖完整 |
+| `layer/detection.rs` | 92.28% ✅ | 文件类型检测，单元测试覆盖充分 |
+| `layer/union_view.rs` | 58.97% | 联合视图，辅助函数已测试 |
+| `layer/cow.rs` | 51.04% | COW 处理，diff 算法和数据结构已测试 |
+| `layer/hooks.rs` | 41.18% | 钩子处理，路径检测和数据结构已测试 |
+
+#### 单元测试覆盖内容
+
+**`layer/detection.rs`** (20+ 测试)
+- 文本/二进制检测算法
+- UTF-8 编码验证
+- 行结束符检测（LF, CRLF, CR, Mixed）
+- 配置参数边界测试
+- BOM 检测
+
+**`layer/cow.rs`** (15+ 测试)
+- `TextChanges` 结构体和 JSON 序列化
+- `generate_diff()` 函数各种场景
+- `compute_text_hash()` 确定性和边界情况
+- `CowResult` 结构体
+
+**`layer/union_view.rs`** (15+ 测试)
+- `FileState` 枚举
+- `get_parent_path()` / `get_filename()` 辅助函数
+- `DirectoryEntry` / `FileVersion` 结构体
+
+**`layer/hooks.rs`** (15+ 测试)
+- `is_hook_path()` 路径检测
+- `HookFileAttr` 属性结构
+- `LayerInfo` 序列化/反序列化
+- `HookResult` / `HookError` 枚举
+- 输入结构反序列化 (`CreateLayerInput`, `SwitchLayerInput`, `DropLayerInput`)
+
+#### 集成测试覆盖内容
+
+**`tests/layer_integration_test.rs`** (21 测试)
+- `test_layer_manager_initialize_base_layer` - 初始化基础层
+- `test_layer_manager_get_current_layer` - 获取当前层
+- `test_layer_manager_create_checkpoint` - 创建检查点
+- `test_layer_manager_switch_layer` - 切换层
+- `test_layer_manager_list_layers` - 列出所有层
+- `test_layer_manager_get_layer_chain` - 获取层链
+- `test_layer_manager_delete_layer` - 删除层
+- `test_layer_manager_delete_layer_with_children_fails` - 删除有子层的层失败
+- `test_layer_manager_record_change` - 记录变更
+- `test_layer_manager_is_at_historical_position` - 检测历史位置
+- `test_layer_manager_create_checkpoint_at_historical_needs_confirm` - 历史层创建需确认
+- `test_layer_manager_create_checkpoint_with_confirm` - 确认后创建检查点
+- 以及 9 个底层 `LayerOperations` 测试
+
+#### 不可测试/低覆盖率部分说明
+
+**`layer/hooks.rs` (41.18%)**
+- `HooksHandler` 的实际读写操作需要完整的 `LayerManager` 和数据库
+- 虚拟文件系统路径的动态内容生成逻辑
+- 这些通过 FUSE 端到端测试覆盖更合适
+
+**`layer/cow.rs` (51.04%)**
+- `CowHandler::write_file()` 等方法需要数据库和 inode 操作
+- 实际的块存储和文本行映射操作
+- 这些通过 `filesystem_integration_test.rs` 间接覆盖
+
+**`layer/union_view.rs` (58.97%)**
+- `UnionView::load()`, `lookup_file()`, `list_directory()` 需要数据库
+- 层链遍历逻辑
+- 这些通过实际文件系统操作间接测试
+
+**`fuse/adapter.rs` (14.56%)**
+- 这是 FUSE 适配器层，需要实际挂载才能测试
+- 包含 `block_on` 异步转同步的桥接代码
+- 由 `tests/fuse_mount_e2e_test.rs` 覆盖（需要 root 权限）
 
 ## 子任务
 

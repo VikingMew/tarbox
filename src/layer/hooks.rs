@@ -587,6 +587,19 @@ mod tests {
     }
 
     #[test]
+    fn test_is_hook_path_edge_cases() {
+        assert!(HooksHandler::is_hook_path("/.tarbox/"));
+        assert!(HooksHandler::is_hook_path("/.tarbox/stats"));
+        assert!(HooksHandler::is_hook_path("/.tarbox/stats/usage"));
+        assert!(HooksHandler::is_hook_path("/.tarbox/snapshots"));
+        assert!(!HooksHandler::is_hook_path("/"));
+        assert!(!HooksHandler::is_hook_path(""));
+        assert!(!HooksHandler::is_hook_path("/tarbox"));
+        assert!(!HooksHandler::is_hook_path("/.tarbo"));
+        assert!(!HooksHandler::is_hook_path("/home/.tarbox"));
+    }
+
+    #[test]
     fn test_hook_file_attr() {
         let dir = HookFileAttr::directory();
         assert!(dir.is_dir);
@@ -599,6 +612,20 @@ mod tests {
         let writeonly = HookFileAttr::writeonly_file();
         assert!(!writeonly.is_dir);
         assert_eq!(writeonly.mode, 0o200);
+    }
+
+    #[test]
+    fn test_hook_file_attr_readwrite() {
+        let rw = HookFileAttr::readwrite_file();
+        assert!(!rw.is_dir);
+        assert_eq!(rw.mode, 0o644);
+        assert_eq!(rw.size, 0);
+    }
+
+    #[test]
+    fn test_hook_file_attr_directory_size() {
+        let dir = HookFileAttr::directory();
+        assert_eq!(dir.size, 4096);
     }
 
     #[test]
@@ -622,5 +649,148 @@ mod tests {
         let json = serde_json::to_string(&info).unwrap();
         assert!(json.contains("test-layer"));
         assert!(json.contains("\"is_current\":true"));
+    }
+
+    #[test]
+    fn test_layer_info_not_current() {
+        let layer = Layer {
+            layer_id: uuid::Uuid::new_v4(),
+            tenant_id: uuid::Uuid::new_v4(),
+            parent_layer_id: Some(uuid::Uuid::new_v4()),
+            layer_name: "child-layer".to_string(),
+            description: None,
+            file_count: 5,
+            total_size: 512,
+            status: crate::storage::LayerStatus::Active,
+            is_readonly: true,
+            tags: None,
+            created_at: chrono::Utc::now(),
+            created_by: "user".to_string(),
+        };
+
+        let info = LayerInfo::from_layer(&layer, false);
+        assert_eq!(info.name, "child-layer");
+        assert!(!info.is_current);
+        assert!(info.is_readonly);
+        assert!(info.parent_id.is_some());
+        assert!(info.description.is_none());
+    }
+
+    #[test]
+    fn test_layer_info_fields() {
+        let layer_id = uuid::Uuid::new_v4();
+        let parent_id = uuid::Uuid::new_v4();
+        let layer = Layer {
+            layer_id,
+            tenant_id: uuid::Uuid::new_v4(),
+            parent_layer_id: Some(parent_id),
+            layer_name: "my-layer".to_string(),
+            description: Some("A layer".to_string()),
+            file_count: 100,
+            total_size: 10240,
+            status: crate::storage::LayerStatus::Active,
+            is_readonly: false,
+            tags: None,
+            created_at: chrono::Utc::now(),
+            created_by: "admin".to_string(),
+        };
+
+        let info = LayerInfo::from_layer(&layer, true);
+        assert_eq!(info.layer_id, layer_id.to_string());
+        assert_eq!(info.parent_id, Some(parent_id.to_string()));
+        assert_eq!(info.file_count, 100);
+        assert_eq!(info.total_size, 10240);
+        assert_eq!(info.description, Some("A layer".to_string()));
+    }
+
+    #[test]
+    fn test_hook_result_variants() {
+        let content = HookResult::Content("test content".to_string());
+        assert!(matches!(content, HookResult::Content(_)));
+
+        let success = HookResult::WriteSuccess { message: "ok".to_string() };
+        assert!(matches!(success, HookResult::WriteSuccess { .. }));
+
+        let error = HookResult::Error(HookError::InvalidPath("/bad".to_string()));
+        assert!(matches!(error, HookResult::Error(_)));
+
+        let not_hook = HookResult::NotAHook;
+        assert!(matches!(not_hook, HookResult::NotAHook));
+    }
+
+    #[test]
+    fn test_hook_error_display() {
+        let err = HookError::InvalidPath("/test".to_string());
+        assert!(err.to_string().contains("/test"));
+
+        let err = HookError::PermissionDenied("no access".to_string());
+        assert!(err.to_string().contains("no access"));
+
+        let err = HookError::InvalidInput("bad data".to_string());
+        assert!(err.to_string().contains("bad data"));
+
+        let err = HookError::Internal("oops".to_string());
+        assert!(err.to_string().contains("oops"));
+    }
+
+    #[test]
+    fn test_create_layer_input_deserialization() {
+        let json = r#"{"name": "my-layer", "description": "test", "confirm": true}"#;
+        let input: CreateLayerInput = serde_json::from_str(json).unwrap();
+        assert_eq!(input.name, "my-layer");
+        assert_eq!(input.description, Some("test".to_string()));
+        assert!(input.confirm);
+    }
+
+    #[test]
+    fn test_create_layer_input_minimal() {
+        let json = r#"{"name": "simple"}"#;
+        let input: CreateLayerInput = serde_json::from_str(json).unwrap();
+        assert_eq!(input.name, "simple");
+        assert!(input.description.is_none());
+        assert!(!input.confirm);
+    }
+
+    #[test]
+    fn test_switch_layer_input_deserialization() {
+        let json = r#"{"layer": "my-layer"}"#;
+        let input: SwitchLayerInput = serde_json::from_str(json).unwrap();
+        assert_eq!(input.layer, "my-layer");
+    }
+
+    #[test]
+    fn test_drop_layer_input_deserialization() {
+        let json = r#"{"layer": "old-layer", "force": true}"#;
+        let input: DropLayerInput = serde_json::from_str(json).unwrap();
+        assert_eq!(input.layer, "old-layer");
+        assert!(input.force);
+    }
+
+    #[test]
+    fn test_drop_layer_input_minimal() {
+        let json = r#"{"layer": "layer-name"}"#;
+        let input: DropLayerInput = serde_json::from_str(json).unwrap();
+        assert_eq!(input.layer, "layer-name");
+        assert!(!input.force);
+    }
+
+    #[test]
+    fn test_tarbox_hook_path_constant() {
+        assert_eq!(TARBOX_HOOK_PATH, "/.tarbox");
+    }
+
+    #[test]
+    fn test_paths_constants() {
+        assert_eq!(paths::LAYERS, "/.tarbox/layers");
+        assert_eq!(paths::LAYERS_CURRENT, "/.tarbox/layers/current");
+        assert_eq!(paths::LAYERS_LIST, "/.tarbox/layers/list");
+        assert_eq!(paths::LAYERS_NEW, "/.tarbox/layers/new");
+        assert_eq!(paths::LAYERS_SWITCH, "/.tarbox/layers/switch");
+        assert_eq!(paths::LAYERS_DROP, "/.tarbox/layers/drop");
+        assert_eq!(paths::LAYERS_TREE, "/.tarbox/layers/tree");
+        assert_eq!(paths::LAYERS_DIFF, "/.tarbox/layers/diff");
+        assert_eq!(paths::SNAPSHOTS, "/.tarbox/snapshots");
+        assert_eq!(paths::STATS, "/.tarbox/stats");
+        assert_eq!(paths::STATS_USAGE, "/.tarbox/stats/usage");
     }
 }

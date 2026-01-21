@@ -1,5 +1,6 @@
 use anyhow::Result;
 use tarbox::config::DatabaseConfig;
+use tarbox::layer::LayerManager;
 use tarbox::storage::{
     ChangeType, CreateInodeInput, CreateLayerEntryInput, CreateLayerInput, CreateTenantInput,
     DatabasePool, InodeOperations, InodeType, LayerOperations, LayerRepository, TenantOperations,
@@ -452,6 +453,283 @@ async fn test_layer_entry_change_types() -> Result<()> {
 
     let delete_entry = entries.iter().find(|e| e.path == "/deleted.txt").unwrap();
     assert_eq!(delete_entry.change_type, ChangeType::Delete);
+
+    Ok(())
+}
+
+// LayerManager integration tests
+
+#[tokio::test]
+async fn test_layer_manager_initialize_base_layer() -> Result<()> {
+    let (pool, tenant_id) = setup_test_db().await?;
+    let manager = LayerManager::new(pool.pool(), tenant_id);
+
+    // Initialize base layer
+    let base_layer = manager.initialize_base_layer().await?;
+
+    assert_eq!(base_layer.layer_name, "base");
+    assert!(base_layer.parent_layer_id.is_none());
+
+    // Calling again should return the same layer
+    let same_layer = manager.initialize_base_layer().await?;
+    assert_eq!(same_layer.layer_id, base_layer.layer_id);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_layer_manager_get_current_layer() -> Result<()> {
+    let (pool, tenant_id) = setup_test_db().await?;
+    let manager = LayerManager::new(pool.pool(), tenant_id);
+
+    // Initialize base layer first
+    let base_layer = manager.initialize_base_layer().await?;
+
+    // Get current layer should return the base layer
+    let current = manager.get_current_layer().await?;
+    assert_eq!(current.layer_id, base_layer.layer_id);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_layer_manager_create_checkpoint() -> Result<()> {
+    let (pool, tenant_id) = setup_test_db().await?;
+    let manager = LayerManager::new(pool.pool(), tenant_id);
+
+    // Initialize base layer
+    manager.initialize_base_layer().await?;
+
+    // Create a checkpoint
+    let checkpoint = manager.create_checkpoint("v1.0", Some("First release")).await?;
+
+    assert_eq!(checkpoint.layer_name, "v1.0");
+    assert!(checkpoint.parent_layer_id.is_some());
+    assert_eq!(checkpoint.description, Some("First release".to_string()));
+
+    // Current layer should be the new checkpoint
+    let current = manager.get_current_layer().await?;
+    assert_eq!(current.layer_id, checkpoint.layer_id);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_layer_manager_switch_layer() -> Result<()> {
+    let (pool, tenant_id) = setup_test_db().await?;
+    let manager = LayerManager::new(pool.pool(), tenant_id);
+
+    // Initialize and create some layers
+    let base = manager.initialize_base_layer().await?;
+    let v1 = manager.create_checkpoint("v1", None).await?;
+    let _v2 = manager.create_checkpoint("v2", None).await?;
+
+    // Switch back to v1
+    let switched = manager.switch_to_layer(v1.layer_id).await?;
+    assert_eq!(switched.layer_id, v1.layer_id);
+
+    // Verify current layer changed
+    let current = manager.get_current_layer().await?;
+    assert_eq!(current.layer_id, v1.layer_id);
+
+    // Switch to base
+    let switched = manager.switch_to_layer(base.layer_id).await?;
+    assert_eq!(switched.layer_id, base.layer_id);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_layer_manager_list_layers() -> Result<()> {
+    let (pool, tenant_id) = setup_test_db().await?;
+    let manager = LayerManager::new(pool.pool(), tenant_id);
+
+    // Create multiple layers
+    manager.initialize_base_layer().await?;
+    manager.create_checkpoint("v1", None).await?;
+    manager.create_checkpoint("v2", None).await?;
+
+    // List layers
+    let layers = manager.list_layers().await?;
+
+    assert!(layers.len() >= 3);
+    assert!(layers.iter().any(|l| l.layer_name == "base"));
+    assert!(layers.iter().any(|l| l.layer_name == "v1"));
+    assert!(layers.iter().any(|l| l.layer_name == "v2"));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_layer_manager_get_layer_chain() -> Result<()> {
+    let (pool, tenant_id) = setup_test_db().await?;
+    let manager = LayerManager::new(pool.pool(), tenant_id);
+
+    // Create a chain of layers
+    let base = manager.initialize_base_layer().await?;
+    let v1 = manager.create_checkpoint("v1", None).await?;
+    let v2 = manager.create_checkpoint("v2", None).await?;
+
+    // Get chain from v2
+    let chain = manager.get_layer_chain(v2.layer_id).await?;
+
+    assert_eq!(chain.len(), 3);
+    assert_eq!(chain[0].layer_id, v2.layer_id);
+    assert_eq!(chain[1].layer_id, v1.layer_id);
+    assert_eq!(chain[2].layer_id, base.layer_id);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_layer_manager_delete_layer() -> Result<()> {
+    let (pool, tenant_id) = setup_test_db().await?;
+    let manager = LayerManager::new(pool.pool(), tenant_id);
+
+    // Create layers
+    manager.initialize_base_layer().await?;
+    let v1 = manager.create_checkpoint("v1", None).await?;
+    let v2 = manager.create_checkpoint("v2", None).await?;
+
+    // Delete v2 (leaf layer)
+    manager.delete_layer(v2.layer_id).await?;
+
+    // Verify it's deleted
+    let layer = manager.get_layer(v2.layer_id).await?;
+    assert!(layer.is_none());
+
+    // Current layer should have switched to parent
+    let current = manager.get_current_layer().await?;
+    assert_eq!(current.layer_id, v1.layer_id);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_layer_manager_delete_layer_with_children_fails() -> Result<()> {
+    let (pool, tenant_id) = setup_test_db().await?;
+    let manager = LayerManager::new(pool.pool(), tenant_id);
+
+    // Create layers
+    let base = manager.initialize_base_layer().await?;
+    manager.create_checkpoint("v1", None).await?;
+
+    // Try to delete base (has child)
+    let result = manager.delete_layer(base.layer_id).await;
+    assert!(result.is_err());
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_layer_manager_record_change() -> Result<()> {
+    let (pool, tenant_id) = setup_test_db().await?;
+    let manager = LayerManager::new(pool.pool(), tenant_id);
+    let inode_ops = InodeOperations::new(pool.pool());
+
+    // Get root inode from tenant
+    let tenant_ops = TenantOperations::new(pool.pool());
+    let tenant = tenant_ops.get_by_id(tenant_id).await?.expect("Tenant should exist");
+
+    // Create a real inode for the test
+    let inode = inode_ops
+        .create(CreateInodeInput {
+            tenant_id,
+            parent_id: Some(tenant.root_inode_id),
+            name: "test.txt".to_string(),
+            inode_type: InodeType::File,
+            mode: 0o644,
+            uid: 1000,
+            gid: 1000,
+        })
+        .await?;
+
+    // Initialize base layer
+    manager.initialize_base_layer().await?;
+
+    // Record a change with real inode
+    manager.record_change(inode.inode_id, "/test.txt", ChangeType::Add, Some(100), None).await?;
+
+    // Get entries for current layer
+    let current = manager.get_current_layer().await?;
+    let entries = manager.get_layer_entries(current.layer_id).await?;
+
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].path, "/test.txt");
+    assert_eq!(entries[0].change_type, ChangeType::Add);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_layer_manager_is_at_historical_position() -> Result<()> {
+    let (pool, tenant_id) = setup_test_db().await?;
+    let manager = LayerManager::new(pool.pool(), tenant_id);
+
+    // Create layers
+    let base = manager.initialize_base_layer().await?;
+    manager.create_checkpoint("v1", None).await?;
+    manager.create_checkpoint("v2", None).await?;
+
+    // At v2, not historical
+    let is_historical = manager.is_at_historical_position().await?;
+    assert!(!is_historical);
+
+    // Switch to base
+    manager.switch_to_layer(base.layer_id).await?;
+
+    // Now at historical position
+    let is_historical = manager.is_at_historical_position().await?;
+    assert!(is_historical);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_layer_manager_create_checkpoint_at_historical_needs_confirm() -> Result<()> {
+    let (pool, tenant_id) = setup_test_db().await?;
+    let manager = LayerManager::new(pool.pool(), tenant_id);
+
+    // Create layers
+    let base = manager.initialize_base_layer().await?;
+    manager.create_checkpoint("v1", None).await?;
+
+    // Switch to base (historical position)
+    manager.switch_to_layer(base.layer_id).await?;
+
+    // Try to create checkpoint without confirmation
+    let result = manager.create_checkpoint("new", None).await;
+
+    // Should fail requiring confirmation
+    assert!(result.is_err());
+    match result {
+        Err(tarbox::layer::LayerManagerError::HistoricalLayerNeedsConfirmation { .. }) => {}
+        _ => panic!("Expected HistoricalLayerNeedsConfirmation error"),
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_layer_manager_create_checkpoint_with_confirm() -> Result<()> {
+    let (pool, tenant_id) = setup_test_db().await?;
+    let manager = LayerManager::new(pool.pool(), tenant_id);
+
+    // Create layers
+    let base = manager.initialize_base_layer().await?;
+    let v1 = manager.create_checkpoint("v1", None).await?;
+
+    // Switch to base (historical position)
+    manager.switch_to_layer(base.layer_id).await?;
+
+    // Create checkpoint with confirmation (should delete future layers)
+    let new_layer = manager.create_checkpoint_with_confirm("new_branch", None, true).await?;
+
+    assert_eq!(new_layer.layer_name, "new_branch");
+
+    // v1 should be deleted
+    let v1_layer = manager.get_layer(v1.layer_id).await?;
+    assert!(v1_layer.is_none());
 
     Ok(())
 }

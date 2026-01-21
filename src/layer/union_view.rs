@@ -274,4 +274,115 @@ mod tests {
         assert!(!not_found.exists());
         assert!(not_found.layer_id().is_none());
     }
+
+    #[test]
+    fn test_file_state_exists_layer_id() {
+        let layer_id = uuid::Uuid::new_v4();
+        let state = FileState::Exists { layer_id, inode_id: 123 };
+        assert_eq!(state.layer_id(), Some(layer_id));
+        assert_eq!(state.inode_id(), Some(123));
+    }
+
+    #[test]
+    fn test_file_state_deleted_layer_id() {
+        let layer_id = uuid::Uuid::new_v4();
+        let state = FileState::Deleted { deleted_in_layer: layer_id };
+        assert_eq!(state.layer_id(), Some(layer_id));
+        assert_eq!(state.inode_id(), None);
+        assert!(!state.exists());
+    }
+
+    #[test]
+    fn test_file_state_not_found() {
+        let state = FileState::NotFound;
+        assert_eq!(state.layer_id(), None);
+        assert_eq!(state.inode_id(), None);
+        assert!(!state.exists());
+    }
+
+    #[test]
+    fn test_get_parent_path_trailing_slash() {
+        assert_eq!(get_parent_path("/foo/bar/"), Some("/foo".to_string()));
+        assert_eq!(get_parent_path("/foo/"), Some("/".to_string()));
+    }
+
+    #[test]
+    fn test_get_parent_path_no_slash() {
+        assert_eq!(get_parent_path("foo"), Some(String::new()));
+    }
+
+    #[test]
+    fn test_get_parent_path_empty() {
+        assert_eq!(get_parent_path(""), None);
+    }
+
+    #[test]
+    fn test_get_filename_root() {
+        assert_eq!(get_filename("/"), "");
+    }
+
+    #[test]
+    fn test_get_filename_empty() {
+        assert_eq!(get_filename(""), "");
+    }
+
+    #[test]
+    fn test_get_filename_deep_path() {
+        assert_eq!(get_filename("/a/b/c/d/e/f"), "f");
+    }
+
+    #[test]
+    fn test_directory_entry_construction() {
+        let entry = DirectoryEntry {
+            name: "test.txt".to_string(),
+            inode_id: 42,
+            layer_id: uuid::Uuid::new_v4(),
+        };
+        assert_eq!(entry.name, "test.txt");
+        assert_eq!(entry.inode_id, 42);
+    }
+
+    #[test]
+    fn test_file_version_construction() {
+        let layer_id = uuid::Uuid::new_v4();
+        let version = FileVersion {
+            layer_id,
+            layer_name: "v1.0".to_string(),
+            change_type: ChangeType::Add,
+            inode_id: 100,
+            size_delta: Some(1024),
+            created_at: chrono::Utc::now(),
+        };
+        assert_eq!(version.layer_name, "v1.0");
+        assert_eq!(version.inode_id, 100);
+        assert_eq!(version.size_delta, Some(1024));
+    }
+
+    #[test]
+    fn test_file_version_with_modify() {
+        let version = FileVersion {
+            layer_id: uuid::Uuid::new_v4(),
+            layer_name: "update".to_string(),
+            change_type: ChangeType::Modify,
+            inode_id: 200,
+            size_delta: Some(-512),
+            created_at: chrono::Utc::now(),
+        };
+        assert!(matches!(version.change_type, ChangeType::Modify));
+        assert_eq!(version.size_delta, Some(-512));
+    }
+
+    #[test]
+    fn test_file_version_with_delete() {
+        let version = FileVersion {
+            layer_id: uuid::Uuid::new_v4(),
+            layer_name: "cleanup".to_string(),
+            change_type: ChangeType::Delete,
+            inode_id: 300,
+            size_delta: None,
+            created_at: chrono::Utc::now(),
+        };
+        assert!(matches!(version.change_type, ChangeType::Delete));
+        assert!(version.size_delta.is_none());
+    }
 }
