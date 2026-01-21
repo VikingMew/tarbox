@@ -75,8 +75,16 @@ async fn test_mount_and_unmount() -> Result<()> {
 
     // Verify mount - use spawn_blocking to avoid deadlock with FUSE
     let path_clone = mount_path.clone();
-    let count = blocking(move || Ok(fs::read_dir(&path_clone)?.count())).await?;
-    assert_eq!(count, 0); // Empty root directory
+    let entries: Vec<String> = blocking(move || {
+        Ok(fs::read_dir(&path_clone)?
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .collect())
+    })
+    .await?;
+    // Root directory should only contain the virtual .tarbox entry
+    assert_eq!(entries.len(), 1);
+    assert!(entries.contains(&".tarbox".to_string()));
 
     drop(session);
     do_unmount(mount_path).await?;
