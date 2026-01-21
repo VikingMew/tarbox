@@ -1,10 +1,12 @@
-// TarboxBackend - Core filesystem implementation
+// TarboxBackend - Core filesystem implementation with layer support
 
 use super::interface::*;
 use crate::fs::error::FsError as CoreFsError;
 use crate::fs::operations::FileSystem;
+use crate::layer::{HookError, HookFileAttr, HookResult, HooksHandler, TARBOX_HOOK_PATH};
 use crate::storage::{InodeType, TenantOperations, TenantRepository};
 use crate::types::{InodeId, TenantId};
+use chrono::Utc;
 use sqlx::PgPool;
 use std::sync::Arc;
 
@@ -74,11 +76,77 @@ impl TarboxBackend {
             nlinks: 1,
         }
     }
+
+    /// Check if a path is a hook path (/.tarbox/...)
+    fn is_hook_path(path: &str) -> bool {
+        HooksHandler::is_hook_path(path)
+    }
+
+    /// Convert hook file attributes to FileAttr
+    fn hook_attr_to_file_attr(path: &str, hook_attr: &HookFileAttr) -> FileAttr {
+        // Use a consistent inode for hook paths based on hash
+        let inode = {
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+            let mut hasher = DefaultHasher::new();
+            path.hash(&mut hasher);
+            // Use high inode numbers to avoid collision with real inodes
+            0x8000_0000_0000_0000 | (hasher.finish() & 0x7FFF_FFFF_FFFF_FFFF)
+        };
+
+        let now = Utc::now();
+        FileAttr {
+            inode,
+            kind: if hook_attr.is_dir { FileType::Directory } else { FileType::RegularFile },
+            size: hook_attr.size,
+            atime: now,
+            mtime: now,
+            ctime: now,
+            mode: hook_attr.mode,
+            uid: 0,
+            gid: 0,
+            nlinks: 1,
+        }
+    }
+
+    /// Convert HookError to FsError
+    fn hook_error_to_fs_error(e: HookError) -> FsError {
+        match e {
+            HookError::InvalidPath(p) => FsError::PathNotFound(p),
+            HookError::PermissionDenied(p) => FsError::PermissionDenied(p),
+            HookError::InvalidInput(msg) => FsError::InvalidPath(msg),
+            HookError::LayerError(e) => FsError::IoError(e.to_string()),
+            HookError::Internal(msg) => FsError::IoError(msg),
+        }
+    }
+
+    /// Get hooks handler
+    fn hooks_handler(&self) -> HooksHandler<'_> {
+        HooksHandler::new(&self.pool, self.tenant_id)
+    }
 }
 
 #[async_trait::async_trait]
 impl FilesystemInterface for TarboxBackend {
     async fn read_file(&self, path: &str, offset: u64, size: u32) -> FsResult<Vec<u8>> {
+        // Handle hook paths
+        if Self::is_hook_path(path) {
+            let handler = self.hooks_handler();
+            let result = handler.handle_read(path).await;
+            let data = match result {
+                HookResult::Content(s) => s.into_bytes(),
+                HookResult::WriteSuccess { message } => message.into_bytes(),
+                HookResult::Error(e) => return Err(Self::hook_error_to_fs_error(e)),
+                HookResult::NotAHook => Vec::new(),
+            };
+            let start = offset as usize;
+            let end = std::cmp::min(start + size as usize, data.len());
+            if start >= data.len() {
+                return Ok(Vec::new());
+            }
+            return Ok(data[start..end].to_vec());
+        }
+
         let data = self.fs()?.read_file(path).await.map_err(map_fs_error)?;
         let start = offset as usize;
         let end = std::cmp::min(start + size as usize, data.len());
@@ -89,6 +157,22 @@ impl FilesystemInterface for TarboxBackend {
     }
 
     async fn write_file(&self, path: &str, offset: u64, data: &[u8]) -> FsResult<u32> {
+        // Handle hook paths
+        if Self::is_hook_path(path) {
+            if offset != 0 {
+                return Err(FsError::NotSupported(
+                    "Offset writes not supported for hook paths".to_string(),
+                ));
+            }
+            let handler = self.hooks_handler();
+            let result = handler.handle_write(path, data).await;
+            return match result {
+                HookResult::WriteSuccess { .. } | HookResult::Content(_) => Ok(data.len() as u32),
+                HookResult::Error(e) => Err(Self::hook_error_to_fs_error(e)),
+                HookResult::NotAHook => Ok(data.len() as u32),
+            };
+        }
+
         if offset != 0 {
             return Err(FsError::NotSupported("Offset writes not supported yet".to_string()));
         }
@@ -97,15 +181,32 @@ impl FilesystemInterface for TarboxBackend {
     }
 
     async fn create_file(&self, path: &str, _mode: u32) -> FsResult<FileAttr> {
+        // Hook paths cannot be created
+        if Self::is_hook_path(path) {
+            return Err(FsError::PermissionDenied("Cannot create files in /.tarbox/".to_string()));
+        }
+
         let inode = self.fs()?.create_file(path).await.map_err(map_fs_error)?;
         Ok(Self::inode_to_attr(&inode))
     }
 
     async fn delete_file(&self, path: &str) -> FsResult<()> {
+        // Hook paths cannot be deleted
+        if Self::is_hook_path(path) {
+            return Err(FsError::PermissionDenied("Cannot delete files in /.tarbox/".to_string()));
+        }
+
         self.fs()?.delete_file(path).await.map_err(map_fs_error)
     }
 
     async fn truncate(&self, path: &str, size: u64) -> FsResult<()> {
+        // Hook paths cannot be truncated
+        if Self::is_hook_path(path) {
+            return Err(FsError::PermissionDenied(
+                "Cannot truncate files in /.tarbox/".to_string(),
+            ));
+        }
+
         if size != 0 {
             return Err(FsError::NotSupported("Non-zero truncate not supported yet".to_string()));
         }
@@ -113,32 +214,130 @@ impl FilesystemInterface for TarboxBackend {
     }
 
     async fn create_dir(&self, path: &str, _mode: u32) -> FsResult<FileAttr> {
+        // Hook paths cannot be created
+        if Self::is_hook_path(path) {
+            return Err(FsError::PermissionDenied(
+                "Cannot create directories in /.tarbox/".to_string(),
+            ));
+        }
+
         let inode = self.fs()?.create_directory(path).await.map_err(map_fs_error)?;
         Ok(Self::inode_to_attr(&inode))
     }
 
     async fn read_dir(&self, path: &str) -> FsResult<Vec<DirEntry>> {
+        // Handle hook paths
+        if Self::is_hook_path(path) {
+            let handler = self.hooks_handler();
+            let result = handler.read_dir(path).await;
+            return match result {
+                HookResult::Content(content) => {
+                    // Content is newline-separated list of entries
+                    let entries: Vec<DirEntry> = content
+                        .lines()
+                        .filter(|l| !l.is_empty())
+                        .map(|name| {
+                            // Generate consistent inodes for hook entries
+                            use std::collections::hash_map::DefaultHasher;
+                            use std::hash::{Hash, Hasher};
+                            let mut hasher = DefaultHasher::new();
+                            format!("{}/{}", path, name).hash(&mut hasher);
+                            let inode =
+                                0x8000_0000_0000_0000 | (hasher.finish() & 0x7FFF_FFFF_FFFF_FFFF);
+
+                            // Determine if directory based on known paths
+                            let is_dir = matches!(
+                                name,
+                                "layers"
+                                    | "snapshots"
+                                    | "stats"
+                                    | "current"
+                                    | "list"
+                                    | "new"
+                                    | "switch"
+                                    | "drop"
+                                    | "tree"
+                                    | "diff"
+                                    | "usage"
+                            ) && (path == TARBOX_HOOK_PATH
+                                || path == "/.tarbox/layers"
+                                || path == "/.tarbox/stats");
+
+                            DirEntry {
+                                inode,
+                                name: name.to_string(),
+                                kind: if is_dir {
+                                    FileType::Directory
+                                } else {
+                                    FileType::RegularFile
+                                },
+                            }
+                        })
+                        .collect();
+                    Ok(entries)
+                }
+                HookResult::Error(e) => Err(Self::hook_error_to_fs_error(e)),
+                _ => Ok(vec![]),
+            };
+        }
+
         let entries = self.fs()?.list_directory(path).await.map_err(map_fs_error)?;
-        Ok(entries
+        let mut result: Vec<DirEntry> = entries
             .into_iter()
             .map(|inode| DirEntry {
                 inode: inode.inode_id as u64,
                 name: inode.name,
                 kind: Self::inode_type_to_file_type(&inode.inode_type),
             })
-            .collect())
+            .collect();
+
+        // If this is the root directory, add .tarbox virtual entry
+        if path == "/" {
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+            let mut hasher = DefaultHasher::new();
+            TARBOX_HOOK_PATH.hash(&mut hasher);
+            let inode = 0x8000_0000_0000_0000 | (hasher.finish() & 0x7FFF_FFFF_FFFF_FFFF);
+
+            result.push(DirEntry { inode, name: ".tarbox".to_string(), kind: FileType::Directory });
+        }
+
+        Ok(result)
     }
 
     async fn remove_dir(&self, path: &str) -> FsResult<()> {
+        // Hook paths cannot be removed
+        if Self::is_hook_path(path) {
+            return Err(FsError::PermissionDenied(
+                "Cannot remove directories in /.tarbox/".to_string(),
+            ));
+        }
+
         self.fs()?.remove_directory(path).await.map_err(map_fs_error)
     }
 
     async fn get_attr(&self, path: &str) -> FsResult<FileAttr> {
+        // Handle hook paths
+        if Self::is_hook_path(path) {
+            let handler = self.hooks_handler();
+            match handler.get_attr(path) {
+                Some(hook_attr) => return Ok(Self::hook_attr_to_file_attr(path, &hook_attr)),
+                None => return Err(FsError::PathNotFound(path.to_string())),
+            }
+        }
+
         let inode = self.fs()?.stat(path).await.map_err(map_fs_error)?;
         Ok(Self::inode_to_attr(&inode))
     }
 
     async fn set_attr(&self, path: &str, attr: SetAttr) -> FsResult<FileAttr> {
+        // Hook paths cannot have attributes changed
+        if Self::is_hook_path(path) {
+            return Err(FsError::PermissionDenied(
+                "Cannot change attributes of /.tarbox/ entries".to_string(),
+            ));
+        }
+
         if let Some(mode) = attr.mode {
             self.fs()?.chmod(path, mode as i32).await.map_err(map_fs_error)?;
         }
@@ -154,10 +353,24 @@ impl FilesystemInterface for TarboxBackend {
     }
 
     async fn chmod(&self, path: &str, mode: u32) -> FsResult<()> {
+        // Hook paths cannot have permissions changed
+        if Self::is_hook_path(path) {
+            return Err(FsError::PermissionDenied(
+                "Cannot change permissions of /.tarbox/ entries".to_string(),
+            ));
+        }
+
         self.fs()?.chmod(path, mode as i32).await.map_err(map_fs_error)
     }
 
     async fn chown(&self, path: &str, uid: u32, gid: u32) -> FsResult<()> {
+        // Hook paths cannot have ownership changed
+        if Self::is_hook_path(path) {
+            return Err(FsError::PermissionDenied(
+                "Cannot change ownership of /.tarbox/ entries".to_string(),
+            ));
+        }
+
         self.fs()?.chown(path, uid as i32, gid as i32).await.map_err(map_fs_error)
     }
 
@@ -467,5 +680,78 @@ mod tests {
             assert_eq!(attr.inode, inode_id as u64);
             assert_eq!(attr.mode, mode as u32);
         }
+    }
+
+    #[test]
+    fn test_is_hook_path() {
+        assert!(TarboxBackend::is_hook_path("/.tarbox"));
+        assert!(TarboxBackend::is_hook_path("/.tarbox/"));
+        assert!(TarboxBackend::is_hook_path("/.tarbox/layers"));
+        assert!(TarboxBackend::is_hook_path("/.tarbox/layers/current"));
+        assert!(TarboxBackend::is_hook_path("/.tarbox/layers/list"));
+        assert!(TarboxBackend::is_hook_path("/.tarbox/layers/new"));
+        assert!(TarboxBackend::is_hook_path("/.tarbox/stats"));
+        assert!(TarboxBackend::is_hook_path("/.tarbox/stats/usage"));
+
+        assert!(!TarboxBackend::is_hook_path("/"));
+        assert!(!TarboxBackend::is_hook_path("/home"));
+        assert!(!TarboxBackend::is_hook_path("/tarbox"));
+        assert!(!TarboxBackend::is_hook_path("/.tar"));
+        assert!(!TarboxBackend::is_hook_path("/data/.tarbox"));
+    }
+
+    #[test]
+    fn test_hook_attr_to_file_attr_directory() {
+        let hook_attr = HookFileAttr { is_dir: true, mode: 0o755, size: 4096 };
+        let attr = TarboxBackend::hook_attr_to_file_attr("/.tarbox", &hook_attr);
+
+        assert_eq!(attr.kind, FileType::Directory);
+        assert_eq!(attr.mode, 0o755);
+        assert_eq!(attr.size, 4096);
+        assert!(attr.inode >= 0x8000_0000_0000_0000);
+    }
+
+    #[test]
+    fn test_hook_attr_to_file_attr_file() {
+        let hook_attr = HookFileAttr { is_dir: false, mode: 0o444, size: 0 };
+        let attr = TarboxBackend::hook_attr_to_file_attr("/.tarbox/layers/current", &hook_attr);
+
+        assert_eq!(attr.kind, FileType::RegularFile);
+        assert_eq!(attr.mode, 0o444);
+        assert!(attr.inode >= 0x8000_0000_0000_0000);
+    }
+
+    #[test]
+    fn test_hook_attr_consistent_inode() {
+        let hook_attr = HookFileAttr { is_dir: false, mode: 0o444, size: 0 };
+
+        let attr1 = TarboxBackend::hook_attr_to_file_attr("/.tarbox/layers/current", &hook_attr);
+        let attr2 = TarboxBackend::hook_attr_to_file_attr("/.tarbox/layers/current", &hook_attr);
+
+        // Same path should get same inode
+        assert_eq!(attr1.inode, attr2.inode);
+
+        // Different path should get different inode
+        let attr3 = TarboxBackend::hook_attr_to_file_attr("/.tarbox/layers/list", &hook_attr);
+        assert_ne!(attr1.inode, attr3.inode);
+    }
+
+    #[test]
+    fn test_hook_error_to_fs_error() {
+        let err = HookError::InvalidPath("/bad/path".to_string());
+        let fs_err = TarboxBackend::hook_error_to_fs_error(err);
+        assert!(matches!(fs_err, FsError::PathNotFound(_)));
+
+        let err = HookError::PermissionDenied("no write".to_string());
+        let fs_err = TarboxBackend::hook_error_to_fs_error(err);
+        assert!(matches!(fs_err, FsError::PermissionDenied(_)));
+
+        let err = HookError::InvalidInput("bad input".to_string());
+        let fs_err = TarboxBackend::hook_error_to_fs_error(err);
+        assert!(matches!(fs_err, FsError::InvalidPath(_)));
+
+        let err = HookError::Internal("internal error".to_string());
+        let fs_err = TarboxBackend::hook_error_to_fs_error(err);
+        assert!(matches!(fs_err, FsError::IoError(_)));
     }
 }
