@@ -33,8 +33,8 @@ Before you begin, ensure you have the following installed:
 
 Good places to start:
 
-- Look for issues labeled [`good first issue`](https://github.com/yourusername/tarbox/labels/good%20first%20issue)
-- Check issues labeled [`help wanted`](https://github.com/yourusername/tarbox/labels/help%20wanted)
+- Look for issues labeled [`good first issue`](https://github.com/vikingmew/tarbox/labels/good%20first%20issue)
+- Check issues labeled [`help wanted`](https://github.com/vikingmew/tarbox/labels/help%20wanted)
 - Review the [task/](task/) directory for planned features
 - Ask in GitHub Discussions if you want to work on something
 
@@ -44,11 +44,11 @@ Good places to start:
 
 ```bash
 # Fork the repository on GitHub, then clone your fork
-git clone https://github.com/YOUR_USERNAME/tarbox.git
+git clone https://github.com/vikingmew/tarbox.git
 cd tarbox
 
 # Add upstream remote
-git remote add upstream https://github.com/yourusername/tarbox.git
+git remote add upstream https://github.com/vikingmew/tarbox.git
 ```
 
 ### 2. Install Dependencies
@@ -498,8 +498,8 @@ cargo clean                    # Clean build artifacts
 If you have questions not covered here:
 
 1. Check [existing documentation](docs/)
-2. Search [GitHub Issues](https://github.com/yourusername/tarbox/issues)
-3. Ask in [GitHub Discussions](https://github.com/yourusername/tarbox/discussions)
+2. Search [GitHub Issues](https://github.com/vikingmew/tarbox/issues)
+3. Ask in [GitHub Discussions](https://github.com/vikingmew/tarbox/discussions)
 4. Read [CLAUDE.md](CLAUDE.md) for detailed development guidelines
 
 Thank you for contributing to Tarbox!

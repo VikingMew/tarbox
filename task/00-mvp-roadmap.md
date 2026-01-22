@@ -234,7 +234,7 @@ MVP 成功的标志是：**任何开发者可以通过简单的 CLI 命令管理
 
 ### 技术架构
 - 语言：Rust 1.92+ (Edition 2024)
-- 数据库：PostgreSQL 14+
+- 数据库：PostgreSQL 16+
 - FUSE：fuser 0.16
 - 异步运行时：tokio
 - CLI 框架：clap

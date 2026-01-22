@@ -52,7 +52,7 @@ Tarbox 的文档分为三个主要部分：
 ### 前置要求
 
 - Rust 1.92+ (Edition 2024)
-- PostgreSQL 14+
+- PostgreSQL 16+
 - FUSE (Linux: libfuse3, macOS: macFUSE)
 
 ### 安装

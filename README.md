@@ -54,15 +54,39 @@ Tarbox is a FUSE filesystem that stores everything in PostgreSQL. It's designed 
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
-- Rust 1.92+ (Edition 2024)
 - PostgreSQL 16+
 - FUSE3 (Linux: `libfuse3-dev`, macOS: `macfuse`)
+- Rust 1.92+ (only for native build)
 
-### Installation
+### Option 1: Docker Compose (Recommended)
+
+The easiest way to get started. Includes PostgreSQL and all dependencies.
+
+```bash
+# Clone repository
+git clone https://github.com/vikingmew/tarbox.git
+cd tarbox
+
+# Start PostgreSQL
+docker-compose up -d postgres
+
+# Run tarbox CLI via Docker
+docker-compose run --rm tarbox-cli tarbox init
+docker-compose run --rm tarbox-cli tarbox tenant create myagent
+docker-compose run --rm tarbox-cli tarbox --tenant myagent ls /
+
+# Optional: Start pgAdmin for database management
+docker-compose --profile tools up -d pgadmin
+# Access at http://localhost:5050 (admin@tarbox.local / admin)
+```
+
+### Option 2: Native Build
+
+Build and run directly on your machine. Requires Rust toolchain.
 
 ```bash
 # Clone and build
@@ -70,30 +94,31 @@ git clone https://github.com/vikingmew/tarbox.git
 cd tarbox
 cargo build --release
 
-# Start PostgreSQL (or use existing instance)
+# Setup PostgreSQL (choose one):
+# A) Use existing PostgreSQL instance
+# B) Start with Docker
 docker-compose up -d postgres
 
-# Initialize database schema
+# Configure database connection
 export DATABASE_URL=postgres://postgres:postgres@localhost:5432/tarbox
+
+# Initialize and run
 ./target/release/tarbox init
+./target/release/tarbox tenant create myagent
 ```
 
 ### Basic Usage
 
 ```bash
-# Create a tenant
-tarbox tenant create myagent
-
-# Use CLI commands
+# CLI file operations
 tarbox --tenant myagent mkdir /workspace
 tarbox --tenant myagent write /workspace/config.txt "key=value"
 tarbox --tenant myagent cat /workspace/config.txt
 tarbox --tenant myagent ls /workspace
 
-# Mount as filesystem and use standard tools
+# Mount as FUSE filesystem (requires FUSE permissions)
 tarbox --tenant myagent mount /mnt/tarbox
 echo "test" > /mnt/tarbox/workspace/test.txt
-vim /mnt/tarbox/workspace/code.py
 ls -la /mnt/tarbox/workspace
 tarbox umount /mnt/tarbox
 ```

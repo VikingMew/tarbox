@@ -289,7 +289,7 @@ DATABASE_URL=postgres://postgres:postgres@localhost:5432/tarbox cargo llvm-cov -
 ## 技术栈
 
 - sqlx 0.8.2 - 异步数据库驱动
-- PostgreSQL 14+ - 数据库
+- PostgreSQL 16+ - 数据库
 - tokio 1.x - 异步运行时
 - blake3 - 内容哈希
 - anyhow - 错误处理

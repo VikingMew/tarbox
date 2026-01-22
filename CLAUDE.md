@@ -47,7 +47,7 @@ cargo deny check               # License/dependency check
 
 ### Requirements
 - Rust 1.92+ (Edition 2024)
-- PostgreSQL 14+
+- PostgreSQL 16+
 - Test coverage must be > 80% (project-wide requirement)
   - Unit tests (no external dependencies): target 55-60%
   - Integration tests (with mocks): fill the gap to 80%+
