@@ -4,3 +4,4 @@ pub mod fuse;
 pub mod layer;
 pub mod storage;
 pub mod types;
+pub mod wasi;
