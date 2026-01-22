@@ -4,6 +4,7 @@
 //! Text files are stored using line-level COW for efficient diff storage.
 
 use std::str;
+use tracing::{debug, trace};
 
 /// Thresholds for text file detection.
 #[derive(Debug, Clone)]
@@ -93,11 +94,11 @@ pub enum LineEnding {
 impl std::fmt::Display for LineEnding {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            LineEnding::Lf => write!(f, "lf"),
-            LineEnding::CrLf => write!(f, "crlf"),
-            LineEnding::Cr => write!(f, "cr"),
-            LineEnding::Mixed => write!(f, "mixed"),
-            LineEnding::None => write!(f, "none"),
+            LineEnding::Lf => write!(f, "LF"),
+            LineEnding::CrLf => write!(f, "CRLF"),
+            LineEnding::Cr => write!(f, "CR"),
+            LineEnding::Mixed => write!(f, "LF"), // Fallback to LF for mixed
+            LineEnding::None => write!(f, "LF"),  // Fallback to LF for single line
         }
     }
 }
@@ -120,8 +121,11 @@ impl FileTypeDetector {
 
     /// Detect the file type from content.
     pub fn detect(&self, data: &[u8]) -> FileTypeInfo {
+        trace!(size = data.len(), "Detecting file type");
+
         // Empty files are considered text
         if data.is_empty() {
+            debug!("Empty file -> Text (UTF-8)");
             return FileTypeInfo::Text {
                 encoding: TextEncoding::Utf8,
                 line_ending: LineEnding::None,
@@ -131,11 +135,17 @@ impl FileTypeDetector {
 
         // Check size limit
         if data.len() > self.config.max_text_file_size {
+            debug!(
+                size = data.len(),
+                max = self.config.max_text_file_size,
+                "File too large -> Binary"
+            );
             return FileTypeInfo::Binary;
         }
 
         // Check for null bytes (strong indicator of binary)
         if data.contains(&0) {
+            debug!("Contains null byte -> Binary");
             return FileTypeInfo::Binary;
         }
 
@@ -144,13 +154,21 @@ impl FileTypeDetector {
 
         let text = match text_result {
             Some(t) => t,
-            None => return FileTypeInfo::Binary,
+            None => {
+                debug!("Invalid encoding -> Binary");
+                return FileTypeInfo::Binary;
+            }
         };
 
         // Check for non-printable characters
         let non_printable_count = self.count_non_printable(data);
         let non_printable_ratio = non_printable_count as f64 / data.len() as f64;
         if non_printable_ratio > self.config.max_non_printable_ratio {
+            debug!(
+                non_printable_ratio = %non_printable_ratio,
+                max = self.config.max_non_printable_ratio,
+                "Too many non-printable chars -> Binary"
+            );
             return FileTypeInfo::Binary;
         }
 
@@ -159,9 +177,20 @@ impl FileTypeDetector {
 
         // Check max line length
         if max_line_len > self.config.max_line_length {
+            debug!(
+                max_line_len = max_line_len,
+                max = self.config.max_line_length,
+                "Line too long -> Binary"
+            );
             return FileTypeInfo::Binary;
         }
 
+        debug!(
+            encoding = %encoding,
+            line_ending = %line_ending,
+            line_count = line_count,
+            "Detected as Text"
+        );
         FileTypeInfo::Text { encoding, line_ending, line_count }
     }
 
@@ -529,5 +558,65 @@ mod tests {
         let info = FileTypeInfo::Binary;
         assert!(info.is_binary());
         assert!(!info.is_text());
+    }
+
+    // Additional tests for Task 10
+
+    #[test]
+    fn test_line_ending_display_uppercase() {
+        // Test that LineEnding Display outputs uppercase for database compatibility
+        assert_eq!(format!("{}", LineEnding::Lf), "LF");
+        assert_eq!(format!("{}", LineEnding::CrLf), "CRLF");
+        assert_eq!(format!("{}", LineEnding::Cr), "CR");
+    }
+
+    #[test]
+    fn test_line_ending_display_fallback() {
+        // Test that Mixed and None fallback to LF for database compatibility
+        assert_eq!(format!("{}", LineEnding::Mixed), "LF");
+        assert_eq!(format!("{}", LineEnding::None), "LF");
+    }
+
+    #[test]
+    fn test_text_encoding_display() {
+        assert_eq!(format!("{}", TextEncoding::Utf8), "utf-8");
+        assert_eq!(format!("{}", TextEncoding::Ascii), "ascii");
+        assert_eq!(format!("{}", TextEncoding::Latin1), "latin-1");
+        assert_eq!(format!("{}", TextEncoding::Unknown), "unknown");
+    }
+
+    #[test]
+    fn test_detect_json_file() {
+        let detector = FileTypeDetector::new();
+        let json_content = br#"{"key": "value", "number": 123}"#;
+        let info = detector.detect(json_content);
+        match info {
+            FileTypeInfo::Text { line_ending, .. } => {
+                assert_eq!(line_ending, LineEnding::None); // Single line
+            }
+            _ => panic!("Expected text file"),
+        }
+    }
+
+    #[test]
+    fn test_detect_shell_script() {
+        let detector = FileTypeDetector::new();
+        let script = b"#!/bin/bash\necho 'hello'\nexit 0\n";
+        let info = detector.detect(script);
+        match info {
+            FileTypeInfo::Text { encoding, line_count, .. } => {
+                assert_eq!(encoding, TextEncoding::Ascii);
+                assert_eq!(line_count, 4);
+            }
+            _ => panic!("Expected text file"),
+        }
+    }
+
+    #[test]
+    fn test_detect_python_file() {
+        let detector = FileTypeDetector::new();
+        let python = b"#!/usr/bin/env python3\n# -*- coding: utf-8 -*-\nprint('hello')\n";
+        let info = detector.detect(python);
+        assert!(info.is_text());
     }
 }

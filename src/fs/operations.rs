@@ -1,19 +1,24 @@
 use sqlx::PgPool;
+use tracing::{debug, info};
 
 use crate::fs::error::{FsError, FsResult};
 use crate::fs::path::{normalize_path, path_components, split_path};
+use crate::layer::{CowHandler, LayerManager};
 use crate::storage::{
-    BlockOperations, CreateBlockInput, CreateInodeInput, Inode, InodeOperations, InodeType,
-    TenantOperations, TenantRepository, UpdateInodeInput,
+    BlockOperations, CreateInodeInput, Inode, InodeOperations, InodeType, TenantOperations,
+    TenantRepository, UpdateInodeInput,
 };
-use crate::types::{InodeId, TenantId};
+use crate::types::{InodeId, LayerId, TenantId};
 
-const BLOCK_SIZE: usize = 4096;
+// Note: BLOCK_SIZE is defined here for future use if needed
+// const BLOCK_SIZE: usize = 4096;
 
 pub struct FileSystem<'a> {
     pub(crate) pool: &'a PgPool,
     pub(crate) tenant_id: TenantId,
     pub(crate) root_inode_id: InodeId,
+    layer_manager: LayerManager<'a>,
+    current_layer_id: LayerId,
 }
 
 impl<'a> FileSystem<'a> {
@@ -24,7 +29,28 @@ impl<'a> FileSystem<'a> {
             .await?
             .ok_or_else(|| FsError::PathNotFound("tenant not found".to_string()))?;
 
-        Ok(Self { pool, tenant_id, root_inode_id: tenant.root_inode_id })
+        // Initialize layer manager and ensure base layer exists
+        let layer_manager = LayerManager::new(pool, tenant_id);
+        let _base_layer =
+            layer_manager.initialize_base_layer().await.map_err(|e| FsError::Storage(e.into()))?;
+
+        let current_layer =
+            layer_manager.get_current_layer().await.map_err(|e| FsError::Storage(e.into()))?;
+
+        info!(
+            tenant_id = %tenant_id,
+            layer_id = %current_layer.layer_id,
+            layer_name = %current_layer.layer_name,
+            "FileSystem initialized with layer"
+        );
+
+        Ok(Self {
+            pool,
+            tenant_id,
+            root_inode_id: tenant.root_inode_id,
+            layer_manager,
+            current_layer_id: current_layer.layer_id,
+        })
     }
 
     pub async fn resolve_path(&self, path: &str) -> FsResult<Inode> {
@@ -160,22 +186,47 @@ impl<'a> FileSystem<'a> {
             return Err(FsError::IsDirectory(path.to_string()));
         }
 
-        let block_ops = BlockOperations::new(self.pool);
-        block_ops.delete(self.tenant_id, inode.inode_id).await?;
+        debug!(
+            path = %path,
+            size = data.len(),
+            inode_id = inode.inode_id,
+            layer_id = %self.current_layer_id,
+            "Writing file via COW"
+        );
 
-        let chunks: Vec<&[u8]> = data.chunks(BLOCK_SIZE).collect();
+        // Read old data for diff calculation
+        let old_data = self.read_file_internal(inode.inode_id).await.ok();
+        // Treat empty data as None (file just created)
+        let old_data_opt = old_data.as_ref().filter(|d| !d.is_empty());
 
-        for (index, chunk) in chunks.iter().enumerate() {
-            block_ops
-                .create(CreateBlockInput {
-                    tenant_id: self.tenant_id,
-                    inode_id: inode.inode_id,
-                    block_index: index as i32,
-                    data: chunk.to_vec(),
-                })
-                .await?;
-        }
+        // Use CowHandler to write file
+        let cow = CowHandler::new(self.pool, self.tenant_id, self.current_layer_id);
+        let result = cow
+            .write_file(inode.inode_id, data, old_data_opt.map(|v| v.as_slice()))
+            .await
+            .map_err(FsError::Storage)?;
 
+        info!(
+            path = %path,
+            is_text = result.is_text,
+            change_type = ?result.change_type,
+            size_delta = result.size_delta,
+            "File written via COW"
+        );
+
+        // Record change to current layer
+        self.layer_manager
+            .record_change(
+                inode.inode_id,
+                path,
+                result.change_type,
+                Some(result.size_delta),
+                result.text_changes.map(|tc| tc.to_json()),
+            )
+            .await
+            .map_err(|e| FsError::Storage(e.into()))?;
+
+        // Update inode metadata
         let inode_ops = InodeOperations::new(self.pool);
         inode_ops
             .update(
@@ -196,6 +247,26 @@ impl<'a> FileSystem<'a> {
         Ok(())
     }
 
+    /// Internal helper to read file data without path resolution
+    async fn read_file_internal(&self, inode_id: InodeId) -> FsResult<Vec<u8>> {
+        // Try reading as text file first
+        let cow = CowHandler::new(self.pool, self.tenant_id, self.current_layer_id);
+        if let Ok(Some(text_content)) = cow.read_text_file(inode_id, self.current_layer_id).await {
+            return Ok(text_content.into_bytes());
+        }
+
+        // Fall back to binary blocks
+        let block_ops = BlockOperations::new(self.pool);
+        let blocks = block_ops.list(self.tenant_id, inode_id).await?;
+
+        let mut data = Vec::new();
+        for block in blocks {
+            data.extend_from_slice(&block.data);
+        }
+
+        Ok(data)
+    }
+
     pub async fn read_file(&self, path: &str) -> FsResult<Vec<u8>> {
         let inode = self.resolve_path(path).await?;
 
@@ -203,6 +274,23 @@ impl<'a> FileSystem<'a> {
             return Err(FsError::IsDirectory(path.to_string()));
         }
 
+        debug!(
+            path = %path,
+            inode_id = inode.inode_id,
+            layer_id = %self.current_layer_id,
+            "Reading file"
+        );
+
+        // Try reading as text file first
+        let cow = CowHandler::new(self.pool, self.tenant_id, self.current_layer_id);
+        if let Ok(Some(text_content)) =
+            cow.read_text_file(inode.inode_id, self.current_layer_id).await
+        {
+            debug!(path = %path, size = text_content.len(), "Read from text_blocks");
+            return Ok(text_content.into_bytes());
+        }
+
+        // Fall back to binary blocks
         let block_ops = BlockOperations::new(self.pool);
         let blocks = block_ops.list(self.tenant_id, inode.inode_id).await?;
 
@@ -211,6 +299,7 @@ impl<'a> FileSystem<'a> {
             data.extend_from_slice(&block.data);
         }
 
+        debug!(path = %path, size = data.len(), "Read from data_blocks");
         Ok(data)
     }
 

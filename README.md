@@ -26,7 +26,7 @@ Tarbox is a FUSE filesystem that stores everything in PostgreSQL. It's designed 
 - **Multi-tenancy** - Complete data isolation per tenant
 - **Cloud-native** - Ready for Kubernetes deployment
 
-**Current Status**: Core filesystem (read/write/mount) is production-ready. Advanced features (layers, audit, text optimization) are partially complete - database layer done, filesystem integration in progress.
+**Current Status**: Core filesystem and layered filesystem are production-ready (370+ tests, 75% coverage). Advanced features like audit integration and performance optimization are next on the roadmap.
 
 ---
 
@@ -39,18 +39,26 @@ Tarbox is a FUSE filesystem that stores everything in PostgreSQL. It's designed 
 - **Multi-tenancy**: Complete isolation with per-tenant namespace
 - **CLI Tool**: Manage tenants and files from command line
 - **FUSE Mount**: Mount as standard filesystem, use any Unix tool
+- **Layered Filesystem**: Docker-style snapshots with COW
+  - ✅ Automatic base layer creation
+  - ✅ Checkpoint creation and switching
+  - ✅ Text files: line-level COW with diff computation
+  - ✅ Binary files: block-level COW (4KB blocks)
+  - ✅ Virtual filesystem hooks (`/.tarbox/layers/`)
+  - ✅ Union view across layer chain
+- **File Type Detection**: Automatic text/binary classification
+  - ✅ UTF-8/ASCII/Latin-1 encoding detection
+  - ✅ Line ending detection (LF/CRLF/CR/Mixed)
+  - ✅ Content-based classification
 
 ### 🚧 In Development
 
-- **Layered Filesystem**: Docker-style snapshots with COW
-  - ✅ Database schema and operations
-  - ⏳ Filesystem integration (COW, layer switching)
 - **Audit Logging**: Operation tracking and compliance reports
   - ✅ Database schema and operations
   - ⏳ Integration with file operations
-- **Text Optimization**: Line-level diffs for code and config files
-  - ✅ Database schema and operations
-  - ⏳ Diff computation and storage
+- **Performance Optimization**: Caching and query optimization
+  - ⏳ LRU cache for metadata and blocks
+  - ⏳ Query optimization and indexing
 
 ---
 
@@ -120,6 +128,13 @@ tarbox --tenant myagent ls /workspace
 tarbox --tenant myagent mount /mnt/tarbox
 echo "test" > /mnt/tarbox/workspace/test.txt
 ls -la /mnt/tarbox/workspace
+
+# Use layer system (automatic snapshots)
+echo "version 1" > /mnt/tarbox/workspace/app.py
+echo "checkpoint1" > /mnt/tarbox/.tarbox/layers/new  # Create checkpoint
+echo "version 2" > /mnt/tarbox/workspace/app.py
+cat /mnt/tarbox/.tarbox/layers/list                  # View layer history
+
 tarbox umount /mnt/tarbox
 ```
 
@@ -205,6 +220,15 @@ tarbox --tenant <name> mount <mountpoint>      # Mount filesystem
 tarbox --tenant <name> mount <mp> --read-only  # Mount read-only
 tarbox --tenant <name> mount <mp> --allow-other # Allow all users
 tarbox umount <mountpoint>                     # Unmount filesystem
+
+# Layer management (via virtual filesystem hooks)
+# After mounting, use standard file operations on /.tarbox/
+cat /.tarbox/layers/current                    # Show current layer
+cat /.tarbox/layers/list                       # List all layers
+echo "checkpoint1" > /.tarbox/layers/new       # Create checkpoint
+echo "<layer-id>" > /.tarbox/layers/switch     # Switch to layer
+cat /.tarbox/layers/tree                       # Show layer tree
+cat /.tarbox/stats/usage                       # Show storage statistics
 ```
 
 ---
@@ -232,10 +256,11 @@ cargo fmt --all && cargo clippy --all-targets -- -D warnings && cargo test --lib
 
 ### Test Coverage
 
-- **Unit tests**: 112 tests, 47.76% coverage (pure functions, no database)
-- **Integration tests**: 59 tests (database operations, FUSE logic)
-- **E2E tests**: 50 tests (requires PostgreSQL + FUSE, runs in CI)
-- **Total expected coverage**: >80%
+- **Unit tests**: 198 tests (pure functions, data structures)
+- **Integration tests**: 160+ tests (database operations, layer system, FUSE logic)
+- **E2E tests**: 11 tests (requires PostgreSQL + FUSE, runs in CI)
+- **Total**: 370+ tests, 0 failures
+- **Coverage**: 75.27% overall (core layer modules >90%)
 
 ### Project Structure
 
@@ -272,17 +297,27 @@ tarbox/
 - [x] Layer management tables (chain queries)
 - [x] Text optimization tables (content-addressed)
 - [x] Repository implementations (3 modules, 22 methods)
-- [x] Comprehensive tests (112 unit + 59 integration)
+- [x] Comprehensive tests (198 unit + 160+ integration)
 
-### 🚧 Phase 3: Filesystem Integration (In Progress)
+### ✅ Phase 3: Layered Filesystem (Complete)
+
+- [x] File type detection (text/binary, encoding, line endings)
+- [x] COW implementation (text: line-level, binary: block-level)
+- [x] Layer management (create, switch, delete, history)
+- [x] Text diff computation and storage (using similar crate)
+- [x] Filesystem hooks (`/.tarbox/layers/*`)
+- [x] Union view across layer chain
+- [x] FileSystem integration with auto base layer
+- [x] 52 new tests for layer functionality
+
+### 🚧 Phase 4: Production Features (In Progress)
 
 - [ ] Audit logging integration with file operations
-- [ ] COW implementation for layered filesystem
-- [ ] Text diff computation and storage
-- [ ] Filesystem hooks for layer control
+- [ ] Performance optimization (LRU cache, query tuning)
 - [ ] Advanced POSIX features (links, xattr)
+- [ ] Coverage improvement to 80%+
 
-### 📋 Phase 4: Cloud Native (Planned)
+### 📋 Phase 5: Cloud Native (Planned)
 
 - [ ] Kubernetes CSI driver
 - [ ] REST/gRPC API

@@ -6,6 +6,7 @@
 use anyhow::Result;
 use sqlx::PgPool;
 use thiserror::Error;
+use tracing::{debug, info};
 
 use crate::storage::{
     ChangeType, CreateLayerEntryInput, CreateLayerInput, Layer, LayerOperations, LayerRepository,
@@ -81,8 +82,11 @@ impl<'a> LayerManager<'a> {
         if let Some(layer_id) = ops.get_current_layer(self.tenant_id).await?
             && let Some(layer) = ops.get(self.tenant_id, layer_id).await?
         {
+            debug!(tenant_id = %self.tenant_id, layer_id = %layer_id, "Base layer already exists");
             return Ok(layer);
         }
+
+        info!(tenant_id = %self.tenant_id, "Initializing base layer");
 
         // Create base layer
         let layer = ops
@@ -98,6 +102,8 @@ impl<'a> LayerManager<'a> {
 
         // Set as current layer
         ops.set_current_layer(self.tenant_id, layer.layer_id).await?;
+
+        info!(tenant_id = %self.tenant_id, layer_id = %layer.layer_id, "Base layer created");
 
         Ok(layer)
     }
@@ -328,6 +334,15 @@ impl<'a> LayerManager<'a> {
         if layer.is_readonly {
             return Err(LayerManagerError::ReadonlyLayer(current_layer_id));
         }
+
+        debug!(
+            inode_id = inode_id,
+            path = %path,
+            change_type = ?change_type,
+            layer_id = %current_layer_id,
+            size_delta = ?size_delta,
+            "Recording change to layer"
+        );
 
         // Add entry
         ops.add_entry(CreateLayerEntryInput {

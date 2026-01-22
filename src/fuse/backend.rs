@@ -9,6 +9,7 @@ use crate::types::{InodeId, TenantId};
 use chrono::Utc;
 use sqlx::PgPool;
 use std::sync::Arc;
+use tracing::debug;
 
 /// Convert fs::FsError to fuse::FsError with proper error mapping
 fn map_fs_error(e: CoreFsError) -> FsError {
@@ -30,6 +31,7 @@ fn map_fs_error(e: CoreFsError) -> FsError {
 pub struct TarboxBackend {
     pool: Arc<PgPool>,
     tenant_id: TenantId,
+    #[allow(dead_code)]
     root_inode_id: InodeId,
 }
 
@@ -45,13 +47,9 @@ impl TarboxBackend {
         Ok(Self { pool, tenant_id, root_inode_id: tenant.root_inode_id })
     }
 
-    fn fs(&self) -> Result<FileSystem<'_>, FsError> {
-        // Create FileSystem directly without fetching tenant again
-        Ok(FileSystem {
-            pool: &self.pool,
-            tenant_id: self.tenant_id,
-            root_inode_id: self.root_inode_id,
-        })
+    async fn fs(&self) -> Result<FileSystem<'_>, FsError> {
+        // Create FileSystem with layer initialization
+        FileSystem::new(&self.pool, self.tenant_id).await.map_err(map_fs_error)
     }
 
     fn inode_type_to_file_type(inode_type: &InodeType) -> FileType {
@@ -147,7 +145,7 @@ impl FilesystemInterface for TarboxBackend {
             return Ok(data[start..end].to_vec());
         }
 
-        let data = self.fs()?.read_file(path).await.map_err(map_fs_error)?;
+        let data = self.fs().await?.read_file(path).await.map_err(map_fs_error)?;
         let start = offset as usize;
         let end = std::cmp::min(start + size as usize, data.len());
         if start >= data.len() {
@@ -157,6 +155,14 @@ impl FilesystemInterface for TarboxBackend {
     }
 
     async fn write_file(&self, path: &str, offset: u64, data: &[u8]) -> FsResult<u32> {
+        debug!(
+            path = %path,
+            offset = offset,
+            size = data.len(),
+            tenant_id = %self.tenant_id,
+            "FUSE write_file"
+        );
+
         // Handle hook paths
         if Self::is_hook_path(path) {
             if offset != 0 {
@@ -176,7 +182,7 @@ impl FilesystemInterface for TarboxBackend {
         if offset != 0 {
             return Err(FsError::NotSupported("Offset writes not supported yet".to_string()));
         }
-        self.fs()?.write_file(path, data).await.map_err(map_fs_error)?;
+        self.fs().await?.write_file(path, data).await.map_err(map_fs_error)?;
         Ok(data.len() as u32)
     }
 
@@ -186,7 +192,7 @@ impl FilesystemInterface for TarboxBackend {
             return Err(FsError::PermissionDenied("Cannot create files in /.tarbox/".to_string()));
         }
 
-        let inode = self.fs()?.create_file(path).await.map_err(map_fs_error)?;
+        let inode = self.fs().await?.create_file(path).await.map_err(map_fs_error)?;
         Ok(Self::inode_to_attr(&inode))
     }
 
@@ -196,7 +202,7 @@ impl FilesystemInterface for TarboxBackend {
             return Err(FsError::PermissionDenied("Cannot delete files in /.tarbox/".to_string()));
         }
 
-        self.fs()?.delete_file(path).await.map_err(map_fs_error)
+        self.fs().await?.delete_file(path).await.map_err(map_fs_error)
     }
 
     async fn truncate(&self, path: &str, size: u64) -> FsResult<()> {
@@ -210,7 +216,7 @@ impl FilesystemInterface for TarboxBackend {
         if size != 0 {
             return Err(FsError::NotSupported("Non-zero truncate not supported yet".to_string()));
         }
-        self.fs()?.write_file(path, &[]).await.map_err(map_fs_error)
+        self.fs().await?.write_file(path, &[]).await.map_err(map_fs_error)
     }
 
     async fn create_dir(&self, path: &str, _mode: u32) -> FsResult<FileAttr> {
@@ -221,7 +227,7 @@ impl FilesystemInterface for TarboxBackend {
             ));
         }
 
-        let inode = self.fs()?.create_directory(path).await.map_err(map_fs_error)?;
+        let inode = self.fs().await?.create_directory(path).await.map_err(map_fs_error)?;
         Ok(Self::inode_to_attr(&inode))
     }
 
@@ -281,7 +287,7 @@ impl FilesystemInterface for TarboxBackend {
             };
         }
 
-        let entries = self.fs()?.list_directory(path).await.map_err(map_fs_error)?;
+        let entries = self.fs().await?.list_directory(path).await.map_err(map_fs_error)?;
         let mut result: Vec<DirEntry> = entries
             .into_iter()
             .map(|inode| DirEntry {
@@ -313,7 +319,7 @@ impl FilesystemInterface for TarboxBackend {
             ));
         }
 
-        self.fs()?.remove_directory(path).await.map_err(map_fs_error)
+        self.fs().await?.remove_directory(path).await.map_err(map_fs_error)
     }
 
     async fn get_attr(&self, path: &str) -> FsResult<FileAttr> {
@@ -326,7 +332,7 @@ impl FilesystemInterface for TarboxBackend {
             }
         }
 
-        let inode = self.fs()?.stat(path).await.map_err(map_fs_error)?;
+        let inode = self.fs().await?.stat(path).await.map_err(map_fs_error)?;
         Ok(Self::inode_to_attr(&inode))
     }
 
@@ -339,12 +345,12 @@ impl FilesystemInterface for TarboxBackend {
         }
 
         if let Some(mode) = attr.mode {
-            self.fs()?.chmod(path, mode as i32).await.map_err(map_fs_error)?;
+            self.fs().await?.chmod(path, mode as i32).await.map_err(map_fs_error)?;
         }
         if attr.uid.is_some() || attr.gid.is_some() {
             let uid = attr.uid.unwrap_or(0) as i32;
             let gid = attr.gid.unwrap_or(0) as i32;
-            self.fs()?.chown(path, uid, gid).await.map_err(map_fs_error)?;
+            self.fs().await?.chown(path, uid, gid).await.map_err(map_fs_error)?;
         }
         if let Some(size) = attr.size {
             self.truncate(path, size).await?;
@@ -360,7 +366,7 @@ impl FilesystemInterface for TarboxBackend {
             ));
         }
 
-        self.fs()?.chmod(path, mode as i32).await.map_err(map_fs_error)
+        self.fs().await?.chmod(path, mode as i32).await.map_err(map_fs_error)
     }
 
     async fn chown(&self, path: &str, uid: u32, gid: u32) -> FsResult<()> {
@@ -371,7 +377,7 @@ impl FilesystemInterface for TarboxBackend {
             ));
         }
 
-        self.fs()?.chown(path, uid as i32, gid as i32).await.map_err(map_fs_error)
+        self.fs().await?.chown(path, uid as i32, gid as i32).await.map_err(map_fs_error)
     }
 
     async fn statfs(&self) -> FsResult<StatFs> {

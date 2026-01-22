@@ -27,7 +27,7 @@ Tarbox 是一个将所有数据存储在 PostgreSQL 中的 FUSE 文件系统。�
 - **多租户** - 每个租户完全数据隔离
 - **云原生** - 准备好 Kubernetes 部署
 
-**当前状态**：核心文件系统（读/写/挂载）已可用于生产。高级功能（层、审计、文本优化）部分完成 - 数据库层已完成，文件系统集成进行中。
+**当前状态**：核心文件系统和分层文件系统已可用于生产（370+ 测试，75% 覆盖率）。审计集成和性能优化等高级功能是下一步的路线图。
 
 ---
 
@@ -40,18 +40,26 @@ Tarbox 是一个将所有数据存储在 PostgreSQL 中的 FUSE 文件系统。�
 - **多租户**：完全隔离的租户命名空间
 - **CLI 工具**：从命令行管理租户和文件
 - **FUSE 挂载**：挂载为标准文件系统，使用任何 Unix 工具
+- **分层文件系统**：Docker 风格的快照和 COW
+  - ✅ 自动创建 base layer
+  - ✅ Checkpoint 创建和切换
+  - ✅ 文本文件：行级 COW 和差异计算
+  - ✅ 二进制文件：块级 COW（4KB 块）
+  - ✅ 虚拟文件系统钩子（`/.tarbox/layers/`）
+  - ✅ 跨层链的联合视图
+- **文件类型检测**：自动文本/二进制分类
+  - ✅ UTF-8/ASCII/Latin-1 编码检测
+  - ✅ 行结束符检测（LF/CRLF/CR/Mixed）
+  - ✅ 基于内容的分类
 
 ### 🚧 开发中
 
-- **分层文件系统**：Docker 风格的快照和 COW
-  - ✅ 数据库 schema 和操作
-  - ⏳ 文件系统集成（COW、层切换）
 - **审计日志**：操作追踪和合规报告
   - ✅ 数据库 schema 和操作
   - ⏳ 与文件操作集成
-- **文本优化**：代码和配置文件的行级差异
-  - ✅ 数据库 schema 和操作
-  - ⏳ 差异计算和存储
+- **性能优化**：缓存和查询优化
+  - ⏳ 元数据和数据块的 LRU 缓存
+  - ⏳ 查询优化和索引
 
 ---
 
@@ -96,6 +104,13 @@ tarbox --tenant myagent mount /mnt/tarbox
 echo "test" > /mnt/tarbox/workspace/test.txt
 vim /mnt/tarbox/workspace/code.py
 ls -la /mnt/tarbox/workspace
+
+# 使用层系统（自动快照）
+echo "version 1" > /mnt/tarbox/workspace/app.py
+echo "checkpoint1" > /mnt/tarbox/.tarbox/layers/new  # 创建检查点
+echo "version 2" > /mnt/tarbox/workspace/app.py
+cat /mnt/tarbox/.tarbox/layers/list                  # 查看层历史
+
 tarbox umount /mnt/tarbox
 ```
 
@@ -181,6 +196,15 @@ tarbox --tenant <name> mount <mountpoint>      # 挂载文件系统
 tarbox --tenant <name> mount <mp> --read-only  # 只读挂载
 tarbox --tenant <name> mount <mp> --allow-other # 允许所有用户访问
 tarbox umount <mountpoint>                     # 卸载文件系统
+
+# 层管理（通过虚拟文件系统钩子）
+# 挂载后，在 /.tarbox/ 上使用标准文件操作
+cat /.tarbox/layers/current                    # 显示当前层
+cat /.tarbox/layers/list                       # 列出所有层
+echo "checkpoint1" > /.tarbox/layers/new       # 创建检查点
+echo "<layer-id>" > /.tarbox/layers/switch     # 切换到层
+cat /.tarbox/layers/tree                       # 显示层树
+cat /.tarbox/stats/usage                       # 显示存储统计
 ```
 
 ---
@@ -208,10 +232,11 @@ cargo fmt --all && cargo clippy --all-targets -- -D warnings && cargo test --lib
 
 ### 测试覆盖率
 
-- **单元测试**：112 个测试，47.76% 覆盖率（纯函数，无数据库）
-- **集成测试**：59 个测试（数据库操作、FUSE 逻辑）
-- **E2E 测试**：50 个测试（需要 PostgreSQL + FUSE，在 CI 中运行）
-- **总体预期覆盖率**：>80%
+- **单元测试**：198 个测试（纯函数、数据结构）
+- **集成测试**：160+ 个测试（数据库操作、层系统、FUSE 逻辑）
+- **E2E 测试**：11 个测试（需要 PostgreSQL + FUSE，在 CI 中运行）
+- **总计**：370+ 测试，0 失败
+- **覆盖率**：75.27% 总体（核心层模块 >90%）
 
 ### 项目结构
 
@@ -248,17 +273,27 @@ tarbox/
 - [x] 层管理表（链式查询）
 - [x] 文本优化表（内容寻址）
 - [x] Repository 实现（3 个模块，22 个方法）
-- [x] 全面测试（112 单元 + 59 集成）
+- [x] 全面测试（198 单元 + 160+ 集成）
 
-### 🚧 阶段 3：文件系统集成（进行中）
+### ✅ 阶段 3：分层文件系统（已完成）
+
+- [x] 文件类型检测（文本/二进制、编码、行结束符）
+- [x] COW 实现（文本：行级，二进制：块级）
+- [x] 层管理（创建、切换、删除、历史）
+- [x] 文本差异计算和存储（使用 similar crate）
+- [x] 文件系统钩子（`/.tarbox/layers/*`）
+- [x] 跨层链的联合视图
+- [x] FileSystem 集成和自动 base layer
+- [x] 52 个新的层功能测试
+
+### 🚧 阶段 4：生产特性（进行中）
 
 - [ ] 审计日志与文件操作集成
-- [ ] 分层文件系统的 COW 实现
-- [ ] 文本差异计算和存储
-- [ ] 层控制的文件系统钩子
+- [ ] 性能优化（LRU 缓存、查询调优）
 - [ ] 高级 POSIX 特性（链接、xattr）
+- [ ] 覆盖率提升到 80%+
 
-### 📋 阶段 4：云原生（计划中）
+### 📋 阶段 5：云原生（计划中）
 
 - [ ] Kubernetes CSI 驱动
 - [ ] REST/gRPC API

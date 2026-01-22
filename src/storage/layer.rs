@@ -162,6 +162,12 @@ impl<'a> LayerRepository for LayerOperations<'a> {
                 change_type, size_delta, text_changes
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            ON CONFLICT (layer_id, path)
+            DO UPDATE SET
+                change_type = EXCLUDED.change_type,
+                size_delta = EXCLUDED.size_delta,
+                text_changes = EXCLUDED.text_changes,
+                created_at = CURRENT_TIMESTAMP
             RETURNING entry_id, layer_id, tenant_id, inode_id, path,
                       change_type, size_delta, text_changes, created_at
             "#,
@@ -181,7 +187,7 @@ impl<'a> LayerRepository for LayerOperations<'a> {
             entry_id = %entry_id,
             layer_id = %input.layer_id,
             path = %input.path,
-            "Added layer entry"
+            "Added/updated layer entry"
         );
 
         Ok(entry)

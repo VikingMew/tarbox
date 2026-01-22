@@ -6,6 +6,7 @@
 use anyhow::Result;
 use similar::{ChangeTag, TextDiff};
 use sqlx::PgPool;
+use tracing::{debug, info};
 
 use crate::layer::detection::{FileTypeDetector, FileTypeInfo, LineEnding, TextEncoding};
 use crate::storage::{
@@ -76,12 +77,30 @@ impl<'a> CowHandler<'a> {
         let is_new = old_data.is_none();
         let old_size = old_data.map(|d| d.len()).unwrap_or(0);
 
+        info!(
+            inode_id = inode_id,
+            new_size = data.len(),
+            old_size = old_size,
+            file_type = ?file_type,
+            layer_id = %self.current_layer_id,
+            "COW write_file"
+        );
+
         match file_type {
             FileTypeInfo::Text { encoding, line_ending, line_count } => {
+                debug!(
+                    encoding = %encoding,
+                    line_ending = %line_ending,
+                    line_count = line_count,
+                    "Writing as text file"
+                );
                 self.write_text_file(inode_id, data, old_data, encoding, line_ending, line_count)
                     .await
             }
-            FileTypeInfo::Binary => self.write_binary_file(inode_id, data, is_new, old_size).await,
+            FileTypeInfo::Binary => {
+                debug!("Writing as binary file");
+                self.write_binary_file(inode_id, data, is_new, old_size).await
+            }
         }
     }
 
@@ -154,6 +173,29 @@ impl<'a> CowHandler<'a> {
         } else {
             self.calculate_line_diff(&old_lines, &new_lines)
         };
+
+        // Delete old text file data if exists (for overwrites)
+        if !is_new {
+            // Delete old line mappings
+            sqlx::query(
+                "DELETE FROM text_line_map WHERE tenant_id = $1 AND inode_id = $2 AND layer_id = $3"
+            )
+            .bind(self.tenant_id)
+            .bind(inode_id)
+            .bind(self.current_layer_id)
+            .execute(self.pool)
+            .await?;
+
+            // Delete old metadata
+            sqlx::query(
+                "DELETE FROM text_file_metadata WHERE tenant_id = $1 AND inode_id = $2 AND layer_id = $3"
+            )
+            .bind(self.tenant_id)
+            .bind(inode_id)
+            .bind(self.current_layer_id)
+            .execute(self.pool)
+            .await?;
+        }
 
         // Create text file metadata
         let has_trailing_newline = new_text.ends_with('\n') || new_text.ends_with("\r\n");
