@@ -4,6 +4,17 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g., v0.1.0 or 'dev' for testing)"
+        required: false
+        default: "dev"
+      create_release:
+        description: "Create GitHub Release"
+        required: false
+        default: false
+        type: boolean
 
 env:
   CARGO_TERM_COLOR: always
@@ -72,6 +83,8 @@ jobs:
     name: Create GitHub Release
     needs: build-binaries
     runs-on: ubuntu-latest
+    # Only create release when triggered by tag push or when manually enabled
+    if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.create_release == 'true'
     permissions:
       contents: write
     steps:
@@ -89,5 +102,6 @@ jobs:
           generate_release_notes: true
           draft: false
           prerelease: false
+          tag_name: ${{ github.event.inputs.version || github.ref_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
