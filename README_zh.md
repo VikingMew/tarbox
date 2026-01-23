@@ -5,6 +5,7 @@
 **基于 PostgreSQL 的文件系统，为 AI Agent 提供版本控制和审计日志**
 
 [![CI](https://github.com/VikingMew/tarbox/workflows/CI/badge.svg)](https://github.com/VikingMew/tarbox/actions/workflows/ci.yml)
+[![E2E Tests](https://github.com/VikingMew/tarbox/workflows/E2E%20Tests/badge.svg)](https://github.com/VikingMew/tarbox/actions/workflows/e2e.yml)
 [![License: MPL-2.0](https://img.shields.io/badge/License-MPL2.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.92%2B-orange.svg)](https://www.rust-lang.org)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%2B-336791.svg)](https://www.postgresql.org)
@@ -27,7 +28,9 @@ Tarbox 是一个将所有数据存储在 PostgreSQL 中的 FUSE 文件系统。�
 - **多租户** - 每个租户完全数据隔离
 - **云原生** - 准备好 Kubernetes 部署
 
-**当前状态**：核心文件系统和分层文件系统已可用于生产（370+ 测试，75% 覆盖率）。审计集成和性能优化等高级功能是下一步的路线图。
+**当前状态**：核心文件系统和分层文件系统已可用于生产。审计集成和性能优化等高级功能是下一步的路线图。
+
+**平台支持**：完全支持 Linux。由于 `fuser` crate 的限制，macOS 支持尚不完整（需要 macFUSE 和条件编译）。详见 [Task 17](task/17-macos-fuse-support.md)。
 
 ---
 
@@ -67,11 +70,35 @@ Tarbox 是一个将所有数据存储在 PostgreSQL 中的 FUSE 文件系统。�
 
 ### 环境要求
 
-- Rust 1.92+ (Edition 2024)
 - PostgreSQL 16+
-- FUSE3 (Linux: `libfuse3-dev`, macOS: `macfuse`)
+- FUSE3 (Linux: `libfuse3-dev`)
+- Rust 1.92+（仅原生构建需要）
 
-### 安装
+### 方式一：Docker Compose（推荐）
+
+最简单的上手方式，包含 PostgreSQL 和所有依赖。
+
+```bash
+# 克隆仓库
+git clone https://github.com/vikingmew/tarbox.git
+cd tarbox
+
+# 启动 PostgreSQL
+docker-compose up -d postgres
+
+# 通过 Docker 运行 tarbox CLI
+docker-compose run --rm tarbox-cli tarbox init
+docker-compose run --rm tarbox-cli tarbox tenant create myagent
+docker-compose run --rm tarbox-cli tarbox --tenant myagent ls /
+
+# 可选：启动 pgAdmin 进行数据库管理
+docker-compose --profile tools up -d pgadmin
+# 访问 http://localhost:5050 (admin@tarbox.local / admin)
+```
+
+### 方式二：原生构建
+
+直接在本机构建和运行，需要 Rust 工具链。
 
 ```bash
 # 克隆并构建
@@ -79,30 +106,31 @@ git clone https://github.com/vikingmew/tarbox.git
 cd tarbox
 cargo build --release
 
-# 启动 PostgreSQL（或使用现有实例）
+# 设置 PostgreSQL（选择一种）：
+# A) 使用现有 PostgreSQL 实例
+# B) 使用 Docker 启动
 docker-compose up -d postgres
 
-# 初始化数据库 schema
+# 配置数据库连接
 export DATABASE_URL=postgres://postgres:postgres@localhost:5432/tarbox
+
+# 初始化并运行
 ./target/release/tarbox init
+./target/release/tarbox tenant create myagent
 ```
 
 ### 基础使用
 
 ```bash
-# 创建租户
-tarbox tenant create myagent
-
-# 使用 CLI 命令
+# CLI 文件操作
 tarbox --tenant myagent mkdir /workspace
 tarbox --tenant myagent write /workspace/config.txt "key=value"
 tarbox --tenant myagent cat /workspace/config.txt
 tarbox --tenant myagent ls /workspace
 
-# 挂载为文件系统并使用标准工具
+# 挂载为 FUSE 文件系统（需要 FUSE 权限）
 tarbox --tenant myagent mount /mnt/tarbox
 echo "test" > /mnt/tarbox/workspace/test.txt
-vim /mnt/tarbox/workspace/code.py
 ls -la /mnt/tarbox/workspace
 
 # 使用层系统（自动快照）
@@ -230,75 +258,32 @@ cargo clippy --all-targets -- -D warnings      # 代码检查
 cargo fmt --all && cargo clippy --all-targets -- -D warnings && cargo test --lib
 ```
 
-### 测试覆盖率
+---
 
-- **单元测试**：198 个测试（纯函数、数据结构）
-- **集成测试**：160+ 个测试（数据库操作、层系统、FUSE 逻辑）
-- **E2E 测试**：11 个测试（需要 PostgreSQL + FUSE，在 CI 中运行）
-- **总计**：370+ 测试，0 失败
-- **覆盖率**：75.27% 总体（核心层模块 >90%）
+## 比较
 
-### 项目结构
+### vs AgentFS
 
-```
-tarbox/
-├── src/
-│   ├── types.rs           # 核心类型别名
-│   ├── config/            # 配置系统
-│   ├── storage/           # PostgreSQL 层（repositories、migrations）
-│   ├── fs/                # 文件系统核心（path、operations、permissions）
-│   ├── fuse/              # FUSE 接口
-│   └── main.rs            # CLI 入口
-├── spec/                  # 架构设计文档
-├── task/                  # 开发任务和进度
-├── tests/                 # 集成和 E2E 测试
-└── migrations/            # 数据库 schema 迁移
-```
+[AgentFS](https://github.com/tursodatabase/agentfs) 是一个基于 SQLite 的 AI Agent 文件系统。在以下场景选择 Tarbox：
+- **运行多个 Agent**，需要在共享基础设施上隔离工作空间
+- **服务端部署**，PostgreSQL 已在你的技术栈中
+- **细粒度版本控制**，针对文本文件（代码、配置、日志）
+- **Kubernetes/云原生** 环境，需要水平扩展
+- **合规要求**，需要集中式审计日志
 
 ---
 
-## 🗺️ 开发路线图
+## 📊 性能
 
-### ✅ 阶段 1：核心文件系统（已完成）
+设计为高性能：
 
-- [x] PostgreSQL 存储后端
-- [x] 多租户数据隔离
-- [x] POSIX 文件操作
-- [x] FUSE 挂载支持
-- [x] CLI 工具
+- **预编译语句**：所有 PostgreSQL 查询使用预编译
+- **连接池**：可配置的连接限制
+- **内容寻址**：去重优化
+- **异步 I/O**：使用 tokio 运行时
+- **LRU 缓存**：元数据和数据块缓存（计划中）
 
-### ✅ 阶段 2：高级存储 Schema（已完成）
-
-- [x] 审计日志表（时间分区）
-- [x] 层管理表（链式查询）
-- [x] 文本优化表（内容寻址）
-- [x] Repository 实现（3 个模块，22 个方法）
-- [x] 全面测试（198 单元 + 160+ 集成）
-
-### ✅ 阶段 3：分层文件系统（已完成）
-
-- [x] 文件类型检测（文本/二进制、编码、行结束符）
-- [x] COW 实现（文本：行级，二进制：块级）
-- [x] 层管理（创建、切换、删除、历史）
-- [x] 文本差异计算和存储（使用 similar crate）
-- [x] 文件系统钩子（`/.tarbox/layers/*`）
-- [x] 跨层链的联合视图
-- [x] FileSystem 集成和自动 base layer
-- [x] 52 个新的层功能测试
-
-### 🚧 阶段 4：生产特性（进行中）
-
-- [ ] 审计日志与文件操作集成
-- [ ] 性能优化（LRU 缓存、查询调优）
-- [ ] 高级 POSIX 特性（链接、xattr）
-- [ ] 覆盖率提升到 80%+
-
-### 📋 阶段 5：云原生（计划中）
-
-- [ ] Kubernetes CSI 驱动
-- [ ] REST/gRPC API
-- [ ] 监控和指标（Prometheus）
-- [ ] Web 管理界面
+性能基准测试即将推出。
 
 ---
 
@@ -321,23 +306,9 @@ tarbox/
 
 ---
 
-## 📊 性能
-
-设计为高性能：
-
-- **预编译语句**：所有 PostgreSQL 查询使用预编译
-- **连接池**：可配置的连接限制
-- **内容寻址**：去重优化
-- **异步 I/O**：使用 tokio 运行时
-- **LRU 缓存**：元数据和数据块缓存（计划中）
-
-性能基准测试即将推出。
-
----
-
 ## 📜 许可证
 
-双重许可：MIT 或 Apache 2.0，任选其一。
+本项目采用 [Mozilla Public License 2.0](LICENSE) 许可证。
 
 ---
 

@@ -26,7 +26,9 @@ Tarbox is a FUSE filesystem that stores everything in PostgreSQL. It's designed 
 - **Multi-tenancy** - Complete data isolation per tenant
 - **Cloud-native** - Ready for Kubernetes deployment
 
-**Current Status**: Core filesystem and layered filesystem are production-ready (370+ tests, 75% coverage). Advanced features like audit integration and performance optimization are next on the roadmap.
+**Current Status**: Core filesystem and layered filesystem are production-ready. Advanced features like audit integration and performance optimization are next on the roadmap.
+
+**Platform Support**: Linux is fully supported. macOS support is incomplete due to `fuser` crate limitations (requires macFUSE and conditional compilation). See [Task 17](task/17-macos-fuse-support.md) for details.
 
 ---
 
@@ -67,7 +69,7 @@ Tarbox is a FUSE filesystem that stores everything in PostgreSQL. It's designed 
 ### Prerequisites
 
 - PostgreSQL 16+
-- FUSE3 (Linux: `libfuse3-dev`, macOS: `macfuse`)
+- FUSE3 (Linux: `libfuse3-dev`)
 - Rust 1.92+ (only for native build)
 
 ### Option 1: Docker Compose (Recommended)
@@ -254,75 +256,32 @@ cargo clippy --all-targets -- -D warnings      # Lint code
 cargo fmt --all && cargo clippy --all-targets -- -D warnings && cargo test --lib
 ```
 
-### Test Coverage
+---
 
-- **Unit tests**: 198 tests (pure functions, data structures)
-- **Integration tests**: 160+ tests (database operations, layer system, FUSE logic)
-- **E2E tests**: 11 tests (requires PostgreSQL + FUSE, runs in CI)
-- **Total**: 370+ tests, 0 failures
-- **Coverage**: 75.27% overall (core layer modules >90%)
+## Comparison
 
-### Project Structure
+### vs AgentFS
 
-```
-tarbox/
-├── src/
-│   ├── types.rs           # Core type aliases
-│   ├── config/            # Configuration system
-│   ├── storage/           # PostgreSQL layer (repositories, migrations)
-│   ├── fs/                # Filesystem core (path, operations, permissions)
-│   ├── fuse/              # FUSE interface
-│   └── main.rs            # CLI entry point
-├── spec/                  # Architecture design documents
-├── task/                  # Development tasks and progress
-├── tests/                 # Integration and E2E tests
-└── migrations/            # Database schema migrations
-```
+[AgentFS](https://github.com/tursodatabase/agentfs) is a filesystem for AI agents based on SQLite. Choose Tarbox when:
+- **Running multiple agents** that need isolated workspaces on shared infrastructure
+- **Server-side deployment** with PostgreSQL already in your stack
+- **Fine-grained version control** for text files (code, configs, logs)
+- **Kubernetes/cloud-native** environments with horizontal scaling needs
+- **Compliance requirements** needing centralized audit logs
 
 ---
 
-## 🗺️ Roadmap
+## 📊 Performance
 
-### ✅ Phase 1: Core Filesystem (Complete)
+Designed for high performance with:
 
-- [x] PostgreSQL storage backend
-- [x] Multi-tenant data isolation
-- [x] POSIX file operations
-- [x] FUSE mounting support
-- [x] CLI tool
+- **Prepared statements** for all PostgreSQL queries
+- **Connection pooling** with configurable limits
+- **Content addressing** for deduplication
+- **Async I/O** with tokio runtime
+- **LRU caching** for metadata and blocks (planned)
 
-### ✅ Phase 2: Advanced Storage Schema (Complete)
-
-- [x] Audit logging tables (time-partitioned)
-- [x] Layer management tables (chain queries)
-- [x] Text optimization tables (content-addressed)
-- [x] Repository implementations (3 modules, 22 methods)
-- [x] Comprehensive tests (198 unit + 160+ integration)
-
-### ✅ Phase 3: Layered Filesystem (Complete)
-
-- [x] File type detection (text/binary, encoding, line endings)
-- [x] COW implementation (text: line-level, binary: block-level)
-- [x] Layer management (create, switch, delete, history)
-- [x] Text diff computation and storage (using similar crate)
-- [x] Filesystem hooks (`/.tarbox/layers/*`)
-- [x] Union view across layer chain
-- [x] FileSystem integration with auto base layer
-- [x] 52 new tests for layer functionality
-
-### 🚧 Phase 4: Production Features (In Progress)
-
-- [ ] Audit logging integration with file operations
-- [ ] Performance optimization (LRU cache, query tuning)
-- [ ] Advanced POSIX features (links, xattr)
-- [ ] Coverage improvement to 80%+
-
-### 📋 Phase 5: Cloud Native (Planned)
-
-- [ ] Kubernetes CSI driver
-- [ ] REST/gRPC API
-- [ ] Monitoring and metrics (Prometheus)
-- [ ] Web management UI
+Benchmarks coming soon.
 
 ---
 
@@ -345,23 +304,9 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for:
 
 ---
 
-## 📊 Performance
-
-Designed for high performance with:
-
-- **Prepared statements** for all PostgreSQL queries
-- **Connection pooling** with configurable limits
-- **Content addressing** for deduplication
-- **Async I/O** with tokio runtime
-- **LRU caching** for metadata and blocks (planned)
-
-Benchmarks coming soon.
-
----
-
 ## 📜 License
 
-Dual-licensed under MIT or Apache 2.0, at your option.
+This project is licensed under the [Mozilla Public License 2.0](LICENSE).
 
 ---
 
