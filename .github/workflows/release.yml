@@ -35,9 +35,10 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
             cross: true
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            cross: false
+          # macOS support disabled: FUSE requires macFUSE which needs manual installation
+          # - os: macos-latest
+          #   target: aarch64-apple-darwin
+          #   cross: false
 
     steps:
       - uses: actions/checkout@v4
