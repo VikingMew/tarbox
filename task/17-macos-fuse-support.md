@@ -10,6 +10,7 @@ Add macOS platform support by integrating with macFUSE (formerly OSXFUSE). This 
 - Linux FUSE support is fully implemented using the `fuser` crate
 - macOS builds are currently disabled in the release workflow
 - The `fuser` crate's build script panics on macOS: "Building without libfuse is only supported on Linux"
+- **已确认**: `fuser` crate 在 macOS 上无法编译，必须使用条件编译
 
 ### macFUSE Overview
 macFUSE is the macOS implementation of FUSE (Filesystem in Userspace):
@@ -40,7 +41,84 @@ macFUSE is the macOS implementation of FUSE (Filesystem in Userspace):
 - May need Apple Developer account for proper distribution
 - System Extension approval required on newer macOS versions
 
+## Required: Conditional Compilation
+
+由于 `fuser` crate 在 macOS 上无法编译，必须先实现条件编译开关才能在 macOS 上构建 Tarbox。
+
+### 需要修改的文件
+
+**Cargo.toml**:
+```toml
+[features]
+default = ["fuse"]
+fuse = ["dep:fuser"]
+
+[dependencies]
+fuser = { version = "0.16.0", features = ["abi-7-31"], optional = true }
+```
+
+**src/lib.rs**:
+```rust
+#[cfg(feature = "fuse")]
+pub mod fuse;
+```
+
+**src/main.rs**:
+```rust
+#[cfg(feature = "fuse")]
+use tarbox::fuse::{MountOptions, mount, unmount};
+
+// Mount/Umount 命令也需要条件编译
+#[cfg(feature = "fuse")]
+Commands::Mount { ... } => { ... }
+
+#[cfg(feature = "fuse")]
+Commands::Umount { ... } => { ... }
+
+#[cfg(not(feature = "fuse"))]
+Commands::Mount { .. } | Commands::Umount { .. } => {
+    eprintln!("FUSE support is not available on this platform.");
+    eprintln!("Build with --features fuse on Linux to enable mount functionality.");
+    std::process::exit(1);
+}
+```
+
+**CLI 命令定义** (也需要条件编译或提供友好错误):
+```rust
+#[derive(Subcommand)]
+enum Commands {
+    // ... other commands ...
+    
+    #[command(about = "Mount filesystem via FUSE (Linux only)")]
+    Mount { ... },
+    
+    #[command(about = "Unmount FUSE filesystem (Linux only)")]
+    Umount { ... },
+}
+```
+
+### 构建方式
+
+```bash
+# Linux (默认启用 FUSE)
+cargo build --release
+
+# macOS (禁用 FUSE)
+cargo build --release --no-default-features
+
+# 显式启用 FUSE (Linux)
+cargo build --release --features fuse
+```
+
 ## Implementation Plan
+
+### Phase 0: Conditional Compilation (前置条件) ⚠️
+- [ ] 将 `fuser` 改为 optional dependency
+- [ ] 添加 `fuse` feature flag (默认启用)
+- [ ] 给 `src/fuse/` 模块添加 `#[cfg(feature = "fuse")]`
+- [ ] 给 `src/main.rs` 中的 FUSE 相关代码添加条件编译
+- [ ] 更新 release workflow: macOS 使用 `--no-default-features`
+- [ ] 测试 Linux 和 macOS 构建都能成功
 
 ### Phase 1: Local Development Support
 - [ ] Document macFUSE installation requirements
@@ -49,7 +127,7 @@ macFUSE is the macOS implementation of FUSE (Filesystem in Userspace):
 - [ ] Create macOS-specific build instructions
 
 ### Phase 2: Feature Flag Implementation
-- [ ] Add `macos-fuse` feature flag to Cargo.toml
+- [ ] Add `macos-fuse` feature flag to Cargo.toml (与 Linux fuse 分开)
 - [ ] Gate macFUSE-specific code behind feature flag
 - [ ] Ensure clean build on macOS without FUSE support
 - [ ] Update lib.rs and main.rs with conditional compilation
