@@ -89,6 +89,42 @@ impl CsiServer {
             .await
             .context("gRPC server error")
     }
+
+    /// Serve both controller and node services
+    pub async fn serve_all(
+        identity: IdentityService,
+        controller: ControllerService,
+        node: NodeService,
+        addr: String,
+    ) -> Result<()> {
+        let addr_parsed =
+            addr.strip_prefix("unix://").context("Address must start with unix://")?;
+
+        // Remove existing socket if it exists
+        if std::path::Path::new(addr_parsed).exists() {
+            std::fs::remove_file(addr_parsed).context("Failed to remove existing socket")?;
+        }
+
+        // Create parent directory
+        if let Some(parent) = std::path::Path::new(addr_parsed).parent() {
+            std::fs::create_dir_all(parent).context("Failed to create socket directory")?;
+        }
+
+        // Create UDS listener
+        let uds =
+            tokio::net::UnixListener::bind(addr_parsed).context("Failed to bind Unix socket")?;
+        let uds_stream = tokio_stream::wrappers::UnixListenerStream::new(uds);
+
+        tracing::info!("CSI Controller+Node listening on {}", addr);
+
+        Server::builder()
+            .add_service(IdentityServer::new(identity))
+            .add_service(ControllerServer::new(controller))
+            .add_service(NodeServer::new(node))
+            .serve_with_incoming(uds_stream)
+            .await
+            .context("gRPC server error")
+    }
 }
 
 #[cfg(test)]

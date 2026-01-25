@@ -5,7 +5,7 @@ use tarbox::config::DatabaseConfig;
 use tarbox::fs::FileSystem;
 use tarbox::fuse::{MountOptions, mount, unmount};
 use tarbox::storage::{
-    CreateTenantInput, DatabasePool, InodeType, TenantOperations, TenantRepository,
+    CreateTenantInput, DatabasePool, InodeType, LayerOperations, TenantOperations, TenantRepository,
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use uuid::Uuid;
@@ -98,6 +98,25 @@ enum Commands {
     Umount {
         #[arg(help = "Mount point directory")]
         mountpoint: String,
+    },
+
+    #[command(about = "Start CSI gRPC server")]
+    Csi {
+        #[arg(
+            long,
+            default_value = "unix:///var/lib/kubelet/plugins/tarbox.csi.io/csi.sock",
+            help = "CSI endpoint (unix socket)"
+        )]
+        endpoint: String,
+
+        #[arg(long, default_value = "all", help = "Run mode: controller, node, or all")]
+        mode: String,
+
+        #[arg(long, default_value = "tarbox-node", help = "Node ID (required for node mode)")]
+        node_id: String,
+
+        #[arg(long, default_value = ":9090", help = "Metrics address")]
+        metrics_addr: String,
     },
 }
 
@@ -265,6 +284,9 @@ async fn main() -> Result<()> {
             println!("Unmounted: {}", mountpoint);
             Ok(())
         }
+        Commands::Csi { endpoint, mode, node_id, metrics_addr } => {
+            handle_csi_command(config, endpoint, mode, node_id, metrics_addr).await
+        }
     }
 }
 
@@ -339,4 +361,82 @@ async fn get_tenant_id(config: &DatabaseConfig, tenant_name: &Option<String>) ->
         .ok_or_else(|| anyhow::anyhow!("Tenant not found: {}", name))?;
 
     Ok(tenant.tenant_id)
+}
+
+async fn handle_csi_command(
+    config: DatabaseConfig,
+    endpoint: String,
+    mode: String,
+    node_id: String,
+    metrics_addr: String,
+) -> Result<()> {
+    use tarbox::csi::{
+        ControllerService, CsiServer, IdentityService, MountManager, NodeService, SnapshotManager,
+        TenantMapper,
+    };
+
+    println!("Starting Tarbox CSI Driver");
+    println!("  Mode: {}", mode);
+    println!("  Endpoint: {}", endpoint);
+    println!("  Node ID: {}", node_id);
+    println!("  Metrics: {}", metrics_addr);
+
+    // Create pool and leak it to get 'static lifetime
+    // This is safe because CSI server runs until process exit
+    let pool = Box::leak(Box::new(DatabasePool::new(&config).await?));
+    let pool_ref = pool.pool();
+
+    // Create shared components
+    let tenant_ops = Arc::new(TenantOperations::new(pool_ref));
+    let layer_ops = Arc::new(LayerOperations::new(pool_ref));
+    let tenant_mapper = Arc::new(TenantMapper::new(tenant_ops.clone(), layer_ops.clone()));
+    let snapshot_manager = Arc::new(SnapshotManager::new(layer_ops.clone()));
+
+    // Create Identity service (always needed)
+    let identity = IdentityService::new();
+
+    match mode.as_str() {
+        "controller" => {
+            println!("Starting in Controller mode...");
+            let controller = ControllerService::new(
+                tenant_mapper.clone(),
+                snapshot_manager.clone(),
+                tenant_ops.clone(),
+            );
+
+            CsiServer::serve_controller(identity, controller, endpoint).await?;
+        }
+        "node" => {
+            println!("Starting in Node mode...");
+            // For node mode, we need a placeholder tenant for mount manager
+            // In real K8s, each volume will have its own tenant
+            let placeholder_tenant = Uuid::new_v4();
+            let fs = Arc::new(FileSystem::new(pool_ref, placeholder_tenant).await?);
+            let mount_manager = Arc::new(MountManager::new(fs));
+
+            let node = NodeService::with_node_id(tenant_mapper.clone(), mount_manager, node_id);
+
+            CsiServer::serve_node(identity, node, endpoint).await?;
+        }
+        "all" => {
+            println!("Starting in All mode (controller + node)...");
+            let controller = ControllerService::new(
+                tenant_mapper.clone(),
+                snapshot_manager.clone(),
+                tenant_ops.clone(),
+            );
+
+            let placeholder_tenant = Uuid::new_v4();
+            let fs = Arc::new(FileSystem::new(pool_ref, placeholder_tenant).await?);
+            let mount_manager = Arc::new(MountManager::new(fs));
+            let node = NodeService::with_node_id(tenant_mapper.clone(), mount_manager, node_id);
+
+            CsiServer::serve_all(identity, controller, node, endpoint).await?;
+        }
+        _ => {
+            anyhow::bail!("Invalid mode: {}. Must be one of: controller, node, all", mode);
+        }
+    }
+
+    Ok(())
 }

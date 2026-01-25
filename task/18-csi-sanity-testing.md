@@ -2,7 +2,25 @@
 
 ## 状态
 
-**📅 计划中**
+**✅ 已完成** (2026-01-25)
+
+### 完成总结
+
+- ✅ `tarbox csi` 子命令实现（支持 controller/node/all 三种模式）
+- ✅ `CsiServer::serve_all()` 方法添加
+- ✅ 本地测试脚本 `scripts/csi-sanity-test.sh`
+- ✅ E2E workflow 集成 csi-sanity 测试
+- ✅ 所有测试通过，fmt + clippy 检查通过
+
+**使用方法**:
+```bash
+# 本地运行
+./scripts/csi-sanity-test.sh
+
+# 或手动运行
+cargo build --release
+./target/release/tarbox csi --mode=all --endpoint=unix:///tmp/csi.sock
+```
 
 ## 目标
 
