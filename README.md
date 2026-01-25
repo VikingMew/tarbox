@@ -12,6 +12,8 @@
 
 [Quick Start](#-quick-start) • [Features](#-features) • [Architecture](#-architecture) • [Documentation](#-documentation)
 
+[中文](README_zh.md)
+
 </div>
 
 ---
