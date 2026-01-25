@@ -30,43 +30,118 @@
 
 ## Crate 结构
 
-### 从 tarbox 主项目分离
+### Workspace 组织
+
+`tarbox-wasi` 作为同一仓库的 workspace member，不是独立仓库：
 
 ```
-tarbox/                    # 主项目（不发布到 crates.io）
-├── src/
-│   ├── main.rs           # CLI 入口
-│   ├── fuse/             # FUSE 实现
-│   ├── csi/              # CSI 实现
-│   └── ...
-└── Cargo.toml
-
-tarbox-wasi/               # 独立 crate（发布到 crates.io）
-├── src/
-│   ├── lib.rs            # crate 入口
-│   ├── adapter.rs        # WasiAdapter
-│   ├── fd_table.rs       # 文件描述符表
-│   ├── config.rs         # 配置
-│   ├── error.rs          # 错误类型
-│   └── http_client.rs    # HTTP 模式客户端
-├── Cargo.toml
-├── README.md
-├── LICENSE
-└── examples/
-    ├── basic_usage.rs
-    └── wasmtime_integration.rs
+tarbox/                          # 仓库根目录
+├── Cargo.toml                   # workspace 根配置
+├── src/                         # 主应用源码
+│   ├── main.rs                  # CLI 入口
+│   ├── fuse/                    # FUSE 实现
+│   ├── csi/                     # CSI 实现
+│   ├── fs/                      # 文件系统核心
+│   ├── storage/                 # 存储层
+│   └── wasi/                    # WASI 适配器（当前位置）
+├── crates/                      # 可发布的 crates
+│   └── tarbox-wasi/             # WASI crate（发布到 crates.io）
+│       ├── Cargo.toml
+│       ├── src/
+│       │   └── lib.rs           # 重导出 tarbox::wasi
+│       ├── README.md
+│       └── examples/
+└── ...
 ```
 
-### Workspace 组织（可选方案）
+### Workspace Cargo.toml
 
 ```toml
 # 根 Cargo.toml
 [workspace]
 members = [
-    "tarbox",        # 主应用
-    "tarbox-wasi",   # WASI crate
-    "tarbox-core",   # 核心类型（可选，未来）
+    ".",              # tarbox 主应用
+    "crates/tarbox-wasi",  # WASI crate
 ]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.92"
+license = "MPL-2.0"
+repository = "https://github.com/vikingmew/tarbox"
+```
+
+### tarbox-wasi Crate 结构
+
+```toml
+# crates/tarbox-wasi/Cargo.toml
+[package]
+name = "tarbox-wasi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "WASI filesystem adapter backed by PostgreSQL"
+documentation = "https://docs.rs/tarbox-wasi"
+keywords = ["wasi", "filesystem", "postgresql", "wasm", "ai"]
+categories = ["filesystem", "wasm", "database"]
+
+[dependencies]
+# 依赖主项目的模块
+tarbox = { path = "../..", default-features = false, features = ["wasi"] }
+```
+
+### 代码组织方式
+
+**方式 A：重导出（推荐）**
+
+`tarbox-wasi` 简单重导出主项目的 wasi 模块：
+
+```rust
+// crates/tarbox-wasi/src/lib.rs
+//! WASI filesystem adapter backed by PostgreSQL.
+//!
+//! This crate provides a WASI-compatible filesystem interface that stores
+//! files in PostgreSQL. See [tarbox](https://github.com/vikingmew/tarbox) for
+//! the full project.
+
+pub use tarbox::wasi::*;
+```
+
+**方式 B：独立实现**
+
+如果需要减少依赖，可以将 wasi 模块代码移动到 crate 中：
+
+```rust
+// crates/tarbox-wasi/src/lib.rs
+mod adapter;
+mod config;
+mod error;
+mod fd_table;
+
+pub use adapter::WasiAdapter;
+pub use config::{DbMode, WasiConfig};
+pub use error::{WasiError, to_wasi_errno};
+pub use fd_table::{FdTable, FileDescriptor, OpenFlags};
+```
+
+**推荐方式 A**：保持代码在主项目中，crate 只做重导出，避免代码重复。
+
+### Feature Flags
+
+```toml
+# 主项目 Cargo.toml
+[features]
+default = ["fuse", "csi"]
+fuse = ["fuser"]
+csi = ["tonic", "prost"]
+wasi = []  # WASI 适配器，默认编译但不包含额外依赖
+
+# crates/tarbox-wasi/Cargo.toml
+[features]
+default = []
+http = ["tarbox/wasi-http"]  # HTTP 模式
 ```
 
 ## API 设计
@@ -176,63 +251,59 @@ pub struct FileDescriptor { /* ... */ }
 
 ## 依赖管理
 
-### 核心依赖
+### Crate 依赖
+
+由于 `tarbox-wasi` 通过重导出主项目模块，它的依赖非常简单：
 
 ```toml
+# crates/tarbox-wasi/Cargo.toml
 [package]
 name = "tarbox-wasi"
 version = "0.1.0"
-edition = "2024"
-rust-version = "1.92"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
 description = "WASI filesystem adapter backed by PostgreSQL"
-license = "MPL-2.0"
-repository = "https://github.com/vikingmew/tarbox"
 documentation = "https://docs.rs/tarbox-wasi"
+readme = "README.md"
 keywords = ["wasi", "filesystem", "postgresql", "wasm", "ai"]
 categories = ["filesystem", "wasm", "database"]
 
 [dependencies]
-# 异步运行时
-tokio = { version = "1", features = ["rt", "sync"] }
-
-# PostgreSQL 客户端
-sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "chrono"] }
-
-# HTTP 客户端（HTTP 模式）
-reqwest = { version = "0.12", features = ["json"], optional = true }
-
-# 序列化
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-
-# 类型
-uuid = { version = "1", features = ["v4", "serde"] }
-chrono = { version = "0.4", features = ["serde"] }
-
-# 错误处理
-anyhow = "1"
-thiserror = "1"
-
-# 工具
-bitflags = "2"
+tarbox = { path = "../..", default-features = false, features = ["wasi"] }
 
 [features]
 default = []
-http = ["reqwest"]  # 启用 HTTP 模式
+http = ["tarbox/wasi-http"]
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
-### 依赖说明
+### 传递依赖
 
-| 依赖 | 必要性 | 说明 |
-|------|--------|------|
-| tokio | 必需 | 异步运行时 |
-| sqlx | 必需 | PostgreSQL 连接 |
-| reqwest | 可选 | HTTP 模式 |
-| uuid | 必需 | 租户 ID、inode ID |
-| anyhow | 必需 | 错误处理 |
+实际依赖通过 `tarbox` 主项目传递：
+
+| 依赖 | 来源 | 说明 |
+|------|------|------|
+| tokio | tarbox | 异步运行时 |
+| sqlx | tarbox | PostgreSQL 连接 |
+| uuid | tarbox | 租户 ID、inode ID |
+| anyhow | tarbox | 错误处理 |
+| reqwest | tarbox (可选) | HTTP 模式 |
+
+### 主项目 Feature 配置
+
+```toml
+# 根 Cargo.toml
+[features]
+default = ["fuse", "csi", "wasi"]
+fuse = ["fuser"]
+csi = ["tonic", "prost"]
+wasi = []              # WASI 适配器核心
+wasi-http = ["reqwest"] # WASI HTTP 模式
+```
 
 ### 关于 PostgreSQL 依赖
 
