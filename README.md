@@ -38,31 +38,17 @@ Tarbox is a FUSE filesystem that stores everything in PostgreSQL. It's designed 
 
 ### ✅ Production Ready
 
-- **POSIX Filesystem**: Standard file operations (create, read, write, delete) via FUSE
-- **PostgreSQL Backend**: ACID guarantees, content-addressed storage with BLAKE3
-- **Multi-tenancy**: Complete isolation with per-tenant namespace
-- **CLI Tool**: Manage tenants and files from command line
-- **FUSE Mount**: Mount as standard filesystem, use any Unix tool
-- **Layered Filesystem**: Docker-style snapshots with COW
-  - ✅ Automatic base layer creation
-  - ✅ Checkpoint creation and switching
-  - ✅ Text files: line-level COW with diff computation
-  - ✅ Binary files: block-level COW (4KB blocks)
-  - ✅ Virtual filesystem hooks (`/.tarbox/layers/`)
-  - ✅ Union view across layer chain
-- **File Type Detection**: Automatic text/binary classification
-  - ✅ UTF-8/ASCII/Latin-1 encoding detection
-  - ✅ Line ending detection (LF/CRLF/CR/Mixed)
-  - ✅ Content-based classification
+- **Standard POSIX Interface**: Mount as regular filesystem via FUSE, use any Unix tool (vim, git, make, etc.)
+- **PostgreSQL Storage**: ACID guarantees, content-addressed deduplication with BLAKE3, standard SQL queries
+- **Multi-tenant Isolation**: Complete data separation per tenant, share infrastructure safely
+- **Version Control**: Docker-style layers with Git-like text diffs, checkpoint and restore any state
+- **Smart File Storage**: Line-level COW for text files, block-level COW for binaries, automatic encoding detection
+- **CLI + Mount**: Manage via command line or mount as standard directory
 
 ### 🚧 In Development
 
-- **Audit Logging**: Operation tracking and compliance reports
-  - ✅ Database schema and operations
-  - ⏳ Integration with file operations
-- **Performance Optimization**: Caching and query optimization
-  - ⏳ LRU cache for metadata and blocks
-  - ⏳ Query optimization and indexing
+- **Audit Logging**: Track every file operation for compliance (database schema complete, integration in progress)
+- **Performance Optimization**: LRU cache for metadata and blocks, query tuning
 
 ---
 
