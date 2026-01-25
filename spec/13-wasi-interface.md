@@ -1,519 +1,536 @@
-# Spec 13: WASI Interface
+# Spec 13: WASI Adapter 技术设计
 
 **优先级**: P2 (高级功能)  
-**状态**: 设计阶段  
-**依赖**: spec/14 (文件系统接口抽象层), spec/06 (API 设计)  
-**基于**: [spec/14-filesystem-interface.md](14-filesystem-interface.md)
+**状态**: 部分实现  
+**依赖**: spec/01 (数据库), spec/14 (文件系统接口)  
+**相关**: spec/17 (tarbox-wasi crate 规划)
 
 ## 概述
 
-WASI (WebAssembly System Interface) 支持使 Tarbox 可以编译为 WebAssembly 模块并在各种 WASM 运行时中运行。这为 Tarbox 带来以下能力：
+本规范描述 Tarbox WASI 适配器的技术设计。WASI 适配器是一个**文件系统后端组件**，让外部 WASI 运行时（如 Wasmtime、WasmEdge）可以使用 Tarbox 作为文件系统实现。
 
-- **跨平台部署**：在浏览器、边缘节点、serverless 环境中运行
-- **安全隔离**：WASM 的沙箱特性提供额外的安全层
-- **轻量级部署**：无需操作系统级依赖，启动快速
-- **云原生集成**：与 Kubernetes、Spin、Wasmtime、WasmEdge 等运行时集成
-
-**本规范描述 WASI 适配器的具体实现细节**，包括 WASI filesystem 接口映射、HTTP database client、运行时集成等。核心的文件系统操作通过 spec/14 定义的 `FilesystemInterface` 实现。
+**关键定位**：
+- Tarbox **不是** WASI 运行时，**不执行** Wasm 代码
+- Tarbox 提供 **WASI 兼容的文件系统适配器**
+- 外部运行时通过适配器将文件操作路由到 Tarbox → PostgreSQL
 
 ## 架构定位
 
 ```
-WASM Runtime (Wasmtime/Wasmer/Browser)
-    ↓
-WASI Preview 2 (wasi-filesystem)
-    ↓
-┌─────────────────────────────────┐
-│  WasiAdapter (本规范)           │  ← 协议适配层
-│  - WASI → Interface 映射        │
-│  - 文件描述符管理               │
-│  - WASI 错误码转换              │
-└─────────────────────────────────┘
-    ↓ 实现 FilesystemInterface trait
-┌─────────────────────────────────┐
-│  FilesystemInterface (spec/14)  │  ← 统一抽象层
-└─────────────────────────────────┘
-    ↓
-┌─────────────────────────────────┐
-│  HTTP Database Client           │  ← WASM 后端
-│  或 SQLite Embedded             │
-└─────────────────────────────────┘
+┌─────────────────────────────────────┐
+│  AI Agent (Wasm 模块)               │
+└─────────────────────────────────────┘
+                 ↓
+┌─────────────────────────────────────┐
+│  WASI 运行时 (Wasmtime/WasmEdge)    │  ← 他们执行 Wasm
+└─────────────────────────────────────┘
+                 ↓ WASI filesystem 调用
+┌─────────────────────────────────────┐
+│  Tarbox WasiAdapter (本规范)        │  ← 我们提供的适配器
+│  - 文件描述符管理                   │
+│  - WASI 错误码映射                  │
+│  - PostgreSQL 存储                  │
+└─────────────────────────────────────┘
+                 ↓
+┌─────────────────────────────────────┐
+│  Tarbox FileSystem                  │
+└─────────────────────────────────────┘
+                 ↓
+┌─────────────────────────────────────┐
+│  PostgreSQL (多租户存储)            │
+└─────────────────────────────────────┘
 ```
 
 ## 设计目标
 
-1. **Rust WASI 兼容性**：利用 Rust 的 `wasm32-wasi` target
-2. **POSIX 兼容子集**：实现 WASI 文件系统接口
-3. **异步支持**：支持 WASI Preview 2 的异步 I/O
-4. **无 FUSE 依赖**：WASM 环境中使用 WASI 文件系统接口替代 FUSE
-5. **数据库连接**：通过 HTTP/WebSocket 连接 PostgreSQL（或使用 SQLite）
+1. **文件系统后端**: 为 WASI 运行时提供持久化文件系统
+2. **PostgreSQL 核心**: 保留 Tarbox 的核心能力（多租户、分层、审计）
+3. **标准 fd API**: 提供 POSIX-like 的文件描述符操作
+4. **可集成性**: 易于集成到各种 WASI 运行时
+5. **双模式支持**: Direct（直连 PostgreSQL）和 HTTP（通过 API）
 
-## 架构设计
+## 核心组件
 
-### 层次结构
+### 1. WasiAdapter
 
-```
-┌─────────────────────────────────────────┐
-│   WASM Runtime (Wasmtime/Wasmer/Spin)   │
-├─────────────────────────────────────────┤
-│   WASI Preview 2 (wasi-filesystem)      │
-├─────────────────────────────────────────┤
-│   Tarbox WASI Adapter                   │
-│   ├─ WASI Filesystem Implementation     │
-│   ├─ HTTP Database Client               │
-│   └─ Memory Cache                       │
-├─────────────────────────────────────────┤
-│   Tarbox Core (fs/, storage/, layer/)   │
-└─────────────────────────────────────────┘
-```
+**位置**: `src/wasi/adapter.rs`
 
-### 组件划分
-
-**1. WASI Adapter Layer** (`src/wasi/`)
-- 实现 WASI filesystem preview 2 接口
-- 将 WASI 调用桥接到 Tarbox Core
-- 管理租户上下文和权限
-
-**2. HTTP Database Client** (`src/storage/http_client.rs`)
-- 通过 HTTP/gRPC 连接远程 PostgreSQL
-- 使用 `reqwest` 或 `hyper` (WASM 兼容版本)
-- 支持连接池和重试机制
-
-**3. SQLite Fallback** (`src/storage/sqlite.rs`)
-- 在不需要多租户时使用嵌入式 SQLite
-- 利用 `rusqlite` 的 WASM 支持
-- 本地缓存和离线模式
-
-**4. Memory Cache** (`src/cache/wasi.rs`)
-- 使用线性内存实现 LRU 缓存
-- 减少数据库往返次数
-- 支持 inode 和 block 缓存
-
-## WASI Filesystem 接口实现
-
-### 核心接口映射
-
-| WASI Function | Tarbox Implementation | 说明 |
-|--------------|----------------------|------|
-| `fd_read` | `FileSystem::read_file` | 读取文件数据 |
-| `fd_write` | `FileSystem::write_file` | 写入文件数据 |
-| `fd_seek` | 内部实现 seek | 文件偏移 |
-| `fd_close` | 释放句柄 | 关闭文件 |
-| `path_open` | `FileSystem::resolve_path` | 打开文件/目录 |
-| `path_create_directory` | `FileSystem::create_directory` | 创建目录 |
-| `path_remove_directory` | `FileSystem::remove_directory` | 删除目录 |
-| `path_unlink_file` | `FileSystem::delete_file` | 删除文件 |
-| `path_filestat_get` | `FileSystem::stat` | 获取元数据 |
-| `fd_readdir` | `FileSystem::list_directory` | 列出目录 |
-
-### 文件描述符管理
+适配器主结构，桥接 WASI 调用到 Tarbox 文件系统：
 
 ```rust
-// 伪代码示例（不是实现）
-struct WasiFileDescriptor {
-    fd: u32,
-    tenant_id: TenantId,
-    inode_id: InodeId,
-    path: String,
-    flags: OpenFlags,
-    position: u64,
-}
-
-struct WasiFsContext {
-    tenant_id: TenantId,
-    fd_table: HashMap<u32, WasiFileDescriptor>,
-    next_fd: AtomicU32,
-    fs: FileSystem,
+pub struct WasiAdapter<'a> {
+    /// 底层文件系统实现
+    fs: Arc<FileSystem<'a>>,
+    /// 租户 ID（多租户隔离）
+    tenant_id: Uuid,
+    /// 文件描述符表
+    fd_table: Arc<Mutex<FdTable>>,
+    /// 配置
+    config: WasiConfig,
 }
 ```
 
-### 路径解析
+**核心方法**：
 
-WASI 使用 preopened directories 概念：
+| 方法 | 说明 |
+|------|------|
+| `fd_open(path, flags)` | 打开文件，返回 fd |
+| `fd_read(fd, buf)` | 从 fd 读取数据 |
+| `fd_write(fd, buf)` | 向 fd 写入数据 |
+| `fd_close(fd)` | 关闭 fd |
+| `fd_seek(fd, offset, whence)` | 改变文件位置 |
+| `fd_filestat_get(fd)` | 获取文件元数据 |
+| `fd_readdir(fd)` | 读取目录内容 |
+| `path_open(dirfd, path, flags)` | 相对路径打开 |
+| `path_create_directory(path)` | 创建目录 |
+| `path_remove_directory(path)` | 删除目录 |
+| `path_unlink_file(path)` | 删除文件 |
+| `path_rename(old, new)` | 重命名 |
 
-```
-/                    -> Tarbox tenant root
-/data               -> 挂载点 (preopened)
-/tmp                -> 临时目录 (preopened)
-/.tarbox            -> 虚拟文件系统钩子
-```
+### 2. FdTable
 
-## 数据库连接策略
+**位置**: `src/wasi/fd_table.rs`
 
-### 方案 A: HTTP Proxy (推荐)
-
-通过 HTTP API 访问 PostgreSQL：
-
-```
-WASM Module ──HTTP──> Tarbox API Server ──PostgreSQL──> Database
-```
-
-**优点**：
-- 无需在 WASM 中链接 PostgreSQL 驱动
-- 支持所有 WASM 运行时
-- 可以添加认证和授权
-- 易于扩展和负载均衡
-
-**实现**：
-- 使用 spec 06 (API Design) 的 REST/gRPC 接口
-- WASM 模块只需要 HTTP 客户端
-- 支持流式传输大文件
-
-### 方案 B: SQLite Embedded
-
-在 WASM 内嵌入 SQLite：
-
-```
-WASM Module ──libSQL/rusqlite──> SQLite WASM
-```
-
-**优点**：
-- 无网络依赖
-- 离线可用
-- 启动快速
-
-**缺点**：
-- 单租户模式
-- 无法共享数据
-- 内存限制
-
-**适用场景**：
-- 边缘计算
-- 离线应用
-- 开发测试环境
-
-### 方案 C: PostgreSQL Proxy Protocol
-
-使用 PostgreSQL wire protocol over WebSocket：
-
-```
-WASM Module ──WebSocket/PostgreSQL Wire──> Proxy ──> PostgreSQL
-```
-
-**优点**：
-- 直接使用 PostgreSQL
-- 支持事务和复杂查询
-
-**缺点**：
-- WASM 中需要完整 PostgreSQL 驱动
-- 包体积大
-- 兼容性问题
-
-## WASM 编译配置
-
-### Cargo.toml 配置
-
-```toml
-[target.wasm32-wasi.dependencies]
-tokio = { version = "1", features = ["rt", "macros"] }
-reqwest = { version = "0.11", default-features = false, features = ["rustls-tls"] }
-
-[profile.release]
-opt-level = "z"     # 优化大小
-lto = true          # 链接时优化
-codegen-units = 1   # 减少代码大小
-strip = true        # 去除符号
-```
-
-### 构建命令
-
-```bash
-# 安装 WASI target
-rustup target add wasm32-wasi
-
-# 构建 WASM 模块
-cargo build --target wasm32-wasi --release
-
-# 优化 WASM (使用 wasm-opt)
-wasm-opt -Oz -o tarbox.wasm target/wasm32-wasi/release/tarbox.wasm
-
-# 组件化 (WASI Preview 2)
-wasm-tools component new tarbox.wasm -o tarbox.component.wasm
-```
-
-## 运行时支持
-
-### Wasmtime (推荐)
+管理文件描述符的分配和状态：
 
 ```rust
-// host.rs - WASM 主机代码示例
+pub struct FdTable {
+    /// 下一个可用 fd
+    next_fd: u32,
+    /// fd -> FileDescriptor 映射
+    descriptors: HashMap<u32, FileDescriptor>,
+}
+
+pub struct FileDescriptor {
+    /// 对应的 inode ID
+    pub inode_id: i64,
+    /// 文件路径
+    pub path: String,
+    /// 打开标志
+    pub flags: OpenFlags,
+    /// 当前读写位置
+    pub position: u64,
+    /// 是否是目录
+    pub is_directory: bool,
+}
+```
+
+**OpenFlags 定义**：
+
+```rust
+bitflags! {
+    pub struct OpenFlags: u32 {
+        const READ    = 0b0001;  // 可读
+        const WRITE   = 0b0010;  // 可写
+        const CREATE  = 0b0100;  // 不存在则创建
+        const TRUNC   = 0b1000;  // 截断
+        const APPEND  = 0b10000; // 追加模式
+    }
+}
+```
+
+**fd 分配策略**：
+- 从 3 开始（0=stdin, 1=stdout, 2=stderr 保留）
+- 单调递增
+- 关闭后不复用（简化实现）
+
+### 3. WasiConfig
+
+**位置**: `src/wasi/config.rs`
+
+适配器配置：
+
+```rust
+pub struct WasiConfig {
+    /// 数据库模式
+    pub db_mode: DbMode,
+    /// HTTP API URL（Http 模式）
+    pub api_url: Option<String>,
+    /// API 密钥（Http 模式）
+    pub api_key: Option<String>,
+    /// 缓存大小（MB）
+    pub cache_size_mb: usize,
+    /// 缓存 TTL（秒）
+    pub cache_ttl_secs: u64,
+    /// 默认租户 ID
+    pub tenant_id: Option<Uuid>,
+}
+
+pub enum DbMode {
+    /// 直连 PostgreSQL
+    Direct,
+    /// 通过 HTTP API
+    Http,
+}
+```
+
+**环境变量**：
+
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `TARBOX_DB_MODE` | `direct` 或 `http` | `direct` |
+| `TARBOX_API_URL` | HTTP API 地址 | - |
+| `TARBOX_API_KEY` | API 密钥 | - |
+| `TARBOX_CACHE_SIZE` | 缓存大小（MB） | 100 |
+| `TARBOX_CACHE_TTL` | 缓存 TTL（秒） | 300 |
+
+### 4. WasiError
+
+**位置**: `src/wasi/error.rs`
+
+WASI 标准错误码映射：
+
+```rust
+pub enum WasiError {
+    /// ENOENT - 文件不存在
+    NotFound,
+    /// EACCES - 权限拒绝
+    PermissionDenied,
+    /// EEXIST - 文件已存在
+    AlreadyExists,
+    /// EINVAL - 无效参数
+    InvalidInput,
+    /// EISDIR - 是目录
+    IsDirectory,
+    /// ENOTDIR - 不是目录
+    NotDirectory,
+    /// EBADF - 无效 fd
+    BadFileDescriptor,
+    /// ENOTEMPTY - 目录非空
+    NotEmpty,
+    /// EIO - I/O 错误
+    IoError(String),
+}
+```
+
+**转换函数**：
+
+```rust
+/// 转换为 WASI errno
+pub fn to_wasi_errno(err: &WasiError) -> u16 {
+    match err {
+        WasiError::NotFound => 44,         // ENOENT
+        WasiError::PermissionDenied => 2,  // EACCES
+        WasiError::AlreadyExists => 20,    // EEXIST
+        WasiError::InvalidInput => 28,     // EINVAL
+        WasiError::IsDirectory => 31,      // EISDIR
+        WasiError::NotDirectory => 54,     // ENOTDIR
+        WasiError::BadFileDescriptor => 8, // EBADF
+        WasiError::NotEmpty => 55,         // ENOTEMPTY
+        WasiError::IoError(_) => 29,       // EIO
+    }
+}
+```
+
+## 数据流
+
+### 文件读取流程
+
+```
+1. fd_open("/workspace/data.txt", READ)
+   ├─ 验证路径（绝对路径，无 ..）
+   ├─ FileSystem::stat() 获取 inode
+   ├─ 创建 FileDescriptor
+   ├─ 分配 fd，存入 FdTable
+   └─ 返回 fd
+
+2. fd_read(fd, buffer)
+   ├─ FdTable 查找 fd
+   ├─ 检查 READ 权限
+   ├─ FileSystem::read_file() 读取数据
+   ├─ 从 position 开始填充 buffer
+   ├─ 更新 position
+   └─ 返回读取字节数
+
+3. fd_close(fd)
+   ├─ FdTable 移除 fd
+   └─ 释放 FileDescriptor
+```
+
+### 文件写入流程
+
+```
+1. fd_open("/workspace/output.txt", WRITE | CREATE)
+   ├─ 验证路径
+   ├─ 检查文件是否存在
+   │   ├─ 不存在且有 CREATE → FileSystem::create_file()
+   │   └─ 存在 → 获取 inode
+   ├─ 创建 FileDescriptor
+   └─ 返回 fd
+
+2. fd_write(fd, data)
+   ├─ FdTable 查找 fd
+   ├─ 检查 WRITE 权限
+   ├─ 根据 position 和 APPEND 标志确定写入位置
+   ├─ FileSystem::write_file() 写入数据
+   ├─ 更新 position
+   └─ 返回写入字节数
+```
+
+### 目录操作流程
+
+```
+1. path_create_directory("/workspace/subdir")
+   ├─ 验证路径
+   ├─ 检查父目录存在
+   ├─ FileSystem::create_directory()
+   └─ 返回成功
+
+2. fd_readdir(dir_fd)
+   ├─ FdTable 查找 fd
+   ├─ 检查是目录
+   ├─ FileSystem::list_directory()
+   └─ 返回目录项列表
+```
+
+## 安全模型
+
+### 租户隔离
+
+每个 `WasiAdapter` 实例绑定一个 `tenant_id`：
+
+```rust
+let adapter = WasiAdapter::new(fs, tenant_id, config);
+// 所有操作限定在 tenant_id 下
+```
+
+- 数据库查询自动添加 `WHERE tenant_id = $1`
+- 无法跨租户访问
+- 配置错误的租户 ID 会导致空结果，不会泄露数据
+
+### 路径验证
+
+```rust
+fn validate_path(path: &str) -> Result<(), WasiError> {
+    // 必须是绝对路径
+    if !path.starts_with('/') {
+        return Err(WasiError::InvalidInput);
+    }
+    
+    // 禁止 .. 逃逸
+    if path.contains("..") {
+        return Err(WasiError::PermissionDenied);
+    }
+    
+    // 禁止访问 /.tarbox（系统目录）
+    if path.starts_with("/.tarbox") {
+        return Err(WasiError::PermissionDenied);
+    }
+    
+    Ok(())
+}
+```
+
+### 权限检查
+
+```rust
+impl FileDescriptor {
+    pub fn can_read(&self) -> bool {
+        self.flags.contains(OpenFlags::READ)
+    }
+    
+    pub fn can_write(&self) -> bool {
+        self.flags.contains(OpenFlags::WRITE)
+    }
+}
+```
+
+## HTTP 模式
+
+当无法直连 PostgreSQL 时（如 edge 环境），使用 HTTP 模式：
+
+```
+WasiAdapter → HTTP Client → Tarbox API Server → PostgreSQL
+```
+
+### 请求格式
+
+```http
+POST /api/v1/fs/read
+Content-Type: application/json
+Authorization: Bearer <api_key>
+
+{
+  "tenant_id": "uuid",
+  "path": "/workspace/file.txt"
+}
+```
+
+### 响应格式
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/octet-stream
+
+<file content>
+```
+
+### 缓存策略
+
+HTTP 模式下启用本地缓存：
+- **inode 缓存**: 减少 stat 调用
+- **小文件缓存**: < 64KB 的文件内容
+- **目录缓存**: 目录列表
+- **TTL**: 可配置，默认 300 秒
+
+## 与 WASI 运行时集成
+
+### Wasmtime 集成示例（概念）
+
+```rust
 use wasmtime::*;
 use wasmtime_wasi::WasiCtxBuilder;
+use tarbox_wasi::WasiAdapter;
 
-let engine = Engine::default();
-let mut linker = Linker::new(&engine);
-wasmtime_wasi::add_to_linker(&mut linker, |s| s)?;
+// 创建 Tarbox 适配器
+let tarbox = WasiAdapter::new(fs, tenant_id, config);
 
+// 实现 wasi-common 的 Dir trait
+struct TarboxDir(Arc<WasiAdapter<'static>>);
+
+impl WasiDir for TarboxDir {
+    fn open_file(
+        &self,
+        path: &str,
+        oflags: OFlags,
+    ) -> Result<Box<dyn WasiFile>, Error> {
+        let flags = convert_oflags(oflags);
+        let fd = self.0.fd_open(path, flags).await?;
+        Ok(Box::new(TarboxFile::new(self.0.clone(), fd)))
+    }
+    
+    // ... 其他方法
+}
+
+// 注册到 WASI context
 let wasi = WasiCtxBuilder::new()
-    .inherit_stdio()
-    .preopened_dir(Dir::open_ambient_dir("/data", ambient_authority())?, "/data")?
+    .preopened_dir(Box::new(TarboxDir(tarbox)), "/workspace")?
     .build();
-
-let mut store = Store::new(&engine, wasi);
-let module = Module::from_file(&engine, "tarbox.wasm")?;
-let instance = linker.instantiate(&mut store, &module)?;
 ```
 
-### Spin (Fermyon)
+### WasmEdge 集成示例（概念）
 
-```toml
-# spin.toml
-spin_manifest_version = "1"
+```rust
+use wasmedge_sdk::*;
+use tarbox_wasi::WasiAdapter;
 
-[[component]]
-id = "tarbox"
-source = "tarbox.wasm"
-allowed_http_hosts = ["https://api.tarbox.io"]
-files = ["/data/*"]
-environment = { DATABASE_URL = "https://api.tarbox.io/db" }
+let tarbox = WasiAdapter::new(fs, tenant_id, config);
+
+// 实现 WasmEdge 的 filesystem plugin
+let fs_plugin = TarboxFsPlugin::new(tarbox);
+
+let vm = Vm::new(None)?
+    .register_plugin(fs_plugin)?;
 ```
 
-### WasmEdge
+## 当前实现状态
 
-```bash
-wasmedge --dir /data:/host/data tarbox.wasm
+### 已实现
+
+- [x] `WasiAdapter` 基础结构
+- [x] `FdTable` 文件描述符管理
+- [x] `WasiConfig` 配置系统
+- [x] `WasiError` 错误码映射
+- [x] `fd_open`, `fd_read`, `fd_write`, `fd_close`
+- [x] `OpenFlags` 定义
+- [x] HTTP 模式配置（结构）
+- [x] 环境变量配置
+
+### 未实现
+
+- [ ] `fd_seek` 完整实现
+- [ ] `fd_readdir` 目录遍历
+- [ ] `path_rename` 重命名
+- [ ] HTTP 模式实际请求
+- [ ] 缓存层
+- [ ] Wasmtime trait 绑定
+- [ ] WasmEdge trait 绑定
+- [ ] 完整的 WASI Preview 2 支持
+
+## 性能考虑
+
+### 批量操作
+
+```rust
+// 推荐：保持 fd 打开
+let fd = adapter.fd_open(path, flags).await?;
+for chunk in data.chunks(4096) {
+    adapter.fd_write(fd, chunk).await?;
+}
+adapter.fd_close(fd).await?;
+
+// 不推荐：频繁 open/close
+for chunk in data.chunks(4096) {
+    let fd = adapter.fd_open(path, flags).await?;
+    adapter.fd_write(fd, chunk).await?;
+    adapter.fd_close(fd).await?;
+}
 ```
 
-## 限制和权衡
+### 缓存命中
 
-### WASM 限制
-
-1. **无多线程支持**（WASI Preview 1）
-   - 解决方案：使用单线程异步运行时
-   - WASI Preview 2 将支持多线程
-
-2. **内存限制**
-   - 默认 4GB 线性内存上限
-   - 需要谨慎管理缓存大小
-
-3. **无 FUSE 支持**
-   - WASM 无法挂载文件系统
-   - 必须通过 WASI 接口访问
-
-4. **有限的系统调用**
-   - 无法使用 `fork`, `exec` 等
-   - 需要纯 Rust 实现
-
-### 性能考虑
-
-- **网络延迟**：数据库通过 HTTP 访问会增加延迟
-- **序列化开销**：数据需要序列化为 JSON/Protobuf
-- **缓存策略**：必须实现高效的本地缓存
-- **冷启动**：WASM 启动快，但需要预热缓存
-
-## 使用场景
-
-### 场景 1: 边缘计算
-
-```
-Edge Node (Wasmtime) ──> Tarbox WASM ──> SQLite Local
-                                     └──> Sync to Cloud (后台)
-```
-
-**优势**：
-- 低延迟本地访问
-- 离线可用
-- 自动同步
-
-### 场景 2: Serverless Functions
-
-```
-AWS Lambda/Cloudflare Workers ──> Tarbox WASM ──> HTTP API
-```
-
-**优势**：
-- 快速启动
-- 按需扩展
-- 无需容器镜像
-
-### 场景 3: 浏览器内文件系统
-
-```
-Web App ──> Tarbox WASM ──> IndexedDB/OPFS
-```
-
-**优势**：
-- 完全客户端
-- 无服务器成本
-- 离线优先
-
-### 场景 4: Kubernetes + WASM
-
-```
-Kubernetes (containerd + runwasi) ──> Tarbox WASM Pod
-```
-
-**优势**：
-- 轻量级部署
-- 快速扩缩容
-- 多租户隔离
-
-## 开发路线图
-
-### Phase 1: 基础支持 (2-3 周)
-- [ ] 添加 `wasm32-wasi` target 支持
-- [ ] 实现 HTTP database client
-- [ ] 移除 FUSE 依赖（条件编译）
-- [ ] 基础 WASI filesystem 接口
-
-### Phase 2: 完整实现 (3-4 周)
-- [ ] 完整 WASI Preview 2 支持
-- [ ] SQLite 嵌入式支持
-- [ ] 内存缓存优化
-- [ ] 文件描述符管理
-
-### Phase 3: 运行时集成 (2-3 周)
-- [ ] Wasmtime 示例和文档
-- [ ] Spin 组件
-- [ ] WasmEdge 支持
-- [ ] 浏览器 WASM 示例
-
-### Phase 4: 优化和测试 (2-3 周)
-- [ ] 性能优化
-- [ ] 大小优化 (< 5MB)
-- [ ] 完整测试套件
-- [ ] 生产环境验证
-
-## 技术依赖
-
-### Rust Crates
-
-```toml
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-# WASI 运行时
-wasi = "0.11"
-
-# HTTP 客户端 (WASM 兼容)
-reqwest = { version = "0.11", default-features = false, features = ["rustls-tls"] }
-
-# SQLite (可选)
-rusqlite = { version = "0.30", features = ["bundled"] }
-
-# 序列化
-serde_json = "1.0"
-bincode = "1.3"
-
-# 异步运行时 (WASM 兼容)
-tokio = { version = "1", features = ["rt", "macros"] }
-```
-
-### 工具链
-
-- **wasm-pack**: WASM 打包工具
-- **wasm-opt**: WASM 优化器
-- **wasm-tools**: WASI 组件化工具
-- **wasmtime**: 测试运行时
-
-## 配置示例
-
-### 环境变量
-
-```bash
-# 数据库连接（HTTP 模式）
-TARBOX_DB_MODE=http
-TARBOX_API_URL=https://api.tarbox.io
-TARBOX_API_KEY=xxx
-
-# 数据库连接（SQLite 模式）
-TARBOX_DB_MODE=sqlite
-TARBOX_SQLITE_PATH=/data/tarbox.db
-
-# 缓存配置
-TARBOX_CACHE_SIZE=100MB
-TARBOX_CACHE_TTL=300
-```
-
-### WASM 组件配置
-
-```toml
-# tarbox.toml
-[wasi]
-inherit_env = false
-env = { TARBOX_DB_MODE = "http" }
-
-[wasi.preopens]
-"/data" = "/host/data"
-"/tmp" = "/host/tmp"
-
-[wasi.http]
-allowed_hosts = ["api.tarbox.io"]
-max_connections = 10
-```
-
-## 安全考虑
-
-1. **沙箱隔离**：WASM 提供强隔离，限制系统调用
-2. **资源限制**：设置内存和 CPU 配额
-3. **网络限制**：只允许访问特定 API endpoint
-4. **租户隔离**：通过 API 层强制租户隔离
-5. **认证授权**：API 访问需要 token 验证
+- 首次访问：~10ms（数据库往返）
+- 缓存命中：~0.1ms
+- HTTP 模式首次：~50ms（网络延迟）
+- HTTP 模式缓存：~0.1ms
 
 ## 测试策略
 
 ### 单元测试
 
-```bash
-# 针对 WASM target 运行测试
-cargo test --target wasm32-wasi
+```rust
+#[tokio::test]
+async fn test_fd_open_read() {
+    let adapter = create_test_adapter().await;
+    
+    // 创建测试文件
+    adapter.path_create_file("/test.txt", b"hello").await?;
+    
+    // 打开并读取
+    let fd = adapter.fd_open("/test.txt", OpenFlags::READ).await?;
+    let mut buf = vec![0u8; 10];
+    let n = adapter.fd_read(fd, &mut buf).await?;
+    
+    assert_eq!(n, 5);
+    assert_eq!(&buf[..5], b"hello");
+}
+
+#[tokio::test]
+async fn test_fd_write_append() {
+    let adapter = create_test_adapter().await;
+    
+    // 写入
+    let fd = adapter.fd_open("/test.txt", OpenFlags::WRITE | OpenFlags::CREATE).await?;
+    adapter.fd_write(fd, b"hello").await?;
+    adapter.fd_close(fd).await?;
+    
+    // 追加
+    let fd = adapter.fd_open("/test.txt", OpenFlags::WRITE | OpenFlags::APPEND).await?;
+    adapter.fd_write(fd, b" world").await?;
+    adapter.fd_close(fd).await?;
+    
+    // 验证
+    let content = adapter.read_file("/test.txt").await?;
+    assert_eq!(content, b"hello world");
+}
 ```
 
 ### 集成测试
 
-```bash
-# 使用 wasmtime 运行集成测试
-wasmtime run --dir /data test.wasm
-```
-
-### 性能测试
-
-- 冷启动时间 < 100ms
-- 文件读写延迟 < 50ms (本地缓存)
-- 包大小 < 5MB (压缩后 < 2MB)
+- 与 Wasmtime 集成测试（需要绑定层）
+- HTTP 模式端到端测试
+- 多租户隔离测试
+- 并发操作测试
 
 ## 参考资料
 
-- [WASI Preview 2](https://github.com/WebAssembly/WASI/blob/main/preview2/README.md)
-- [Wasmtime](https://wasmtime.dev/)
-- [Spin Framework](https://www.fermyon.com/spin)
-- [WasmEdge](https://wasmedge.org/)
-- [Rust WASM Book](https://rustwasm.github.io/docs/book/)
+- [WASI filesystem specification](https://github.com/WebAssembly/wasi-filesystem)
+- [WASI Preview 2](https://github.com/WebAssembly/WASI/tree/main/wasip2)
+- [Wasmtime WASI implementation](https://docs.wasmtime.dev/api/wasmtime_wasi/)
+- [WasmEdge plugins](https://wasmedge.org/docs/develop/plugin/)
 
-## 与其他 Spec 的关系
+## 相关规范
 
-- **Spec 01**: 数据库 schema 保持不变，但访问方式改为 HTTP
-- **Spec 02**: FUSE 接口替换为 WASI filesystem 接口
-- **Spec 06**: API 设计必须支持 WASM 客户端
-- **Spec 07**: 性能优化需要考虑 WASM 特性
-- **Spec 09**: 多租户通过 API 层控制
-
-## 决策记录
-
-### DR-13-1: 优先支持 HTTP API 模式而非嵌入式数据库
-
-**原因**：
-- 保持多租户能力
-- 简化 WASM 模块大小
-- 易于扩展和维护
-- 符合云原生架构
-
-### DR-13-2: 使用 WASI Preview 2
-
-**原因**：
-- Preview 2 是未来标准
-- 支持异步 I/O
-- 更好的组件化支持
-- 虽然还在开发中，但 Rust 支持良好
-
-### DR-13-3: 条件编译分离 FUSE 和 WASI
-
-**原因**：
-- 同一代码库支持两种模式
-- 减少代码重复
-- 方便测试和维护
-
-## 状态
-
-- **当前状态**: 设计阶段
-- **优先级**: P2 (高级功能)
-- **依赖**: Spec 01, 06
-- **预计工作量**: 8-12 周
+- **spec/01**: 数据库 schema - 存储层基础
+- **spec/14**: 文件系统接口 - FileSystem API
+- **spec/17**: tarbox-wasi crate - crate 整体规划
