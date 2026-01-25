@@ -8,12 +8,15 @@
 
 WASI (WebAssembly System Interface) 是 WebAssembly 的系统接口标准，允许 Wasm 模块安全地访问文件系统、网络等系统资源。
 
-## 为什么 Tarbox 需要 WASI？
+## 为什么 WASI Agent 需要 Tarbox？
 
-- **AI 沙箱环境**: 为 AI Agent 提供隔离的执行环境
-- **跨平台一致性**: Wasm 代码在不同平台上行为一致
-- **细粒度权限控制**: 通过 WASI capability 系统精确控制资源访问
-- **多租户隔离**: 每个租户的 Wasm 运行时完全隔离
+当你的 AI Agent 运行在 WebAssembly 沙箱环境中时，Tarbox 提供了完整的文件系统能力：
+
+- **持久化存储**: Wasm 模块需要保存和读取数据，Tarbox 提供可靠的 PostgreSQL 存储
+- **版本控制**: AI Agent 的工作成果自动分层保存，可随时回溯到任意检查点
+- **多租户隔离**: 不同 Agent 的数据完全隔离，安全地共享基础设施
+- **审计追溯**: 所有文件操作自动记录，满足 AI 可解释性和合规要求
+- **标准 POSIX 接口**: Wasm 代码使用标准 Rust `std::fs` API，无需修改即可运行
 
 ---
 
