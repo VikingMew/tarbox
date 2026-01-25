@@ -135,10 +135,8 @@ metadata:
   name: tarbox
 provisioner: tarbox.csi.io
 parameters:
-  # Tarbox 特定参数
+  # Tarbox 特定参数（当前为空，未来可扩展）
   fsType: "tarbox"
-  # 可选：存储层级
-  tier: "standard"
 volumeBindingMode: Immediate
 allowVolumeExpansion: false  # 当前不支持扩容
 reclaimPolicy: Delete
