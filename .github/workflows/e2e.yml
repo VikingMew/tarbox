@@ -147,11 +147,14 @@ jobs:
 
       - name: Install csi-sanity
         run: |
+          # csi-sanity doesn't provide pre-built binaries, build from source
           CSI_SANITY_VERSION=v5.2.0
-          wget -q https://github.com/kubernetes-csi/csi-test/releases/download/${CSI_SANITY_VERSION}/csi-sanity-${CSI_SANITY_VERSION}-linux-amd64.tar.gz
-          tar -xzf csi-sanity-${CSI_SANITY_VERSION}-linux-amd64.tar.gz
+          git clone --depth 1 --branch ${CSI_SANITY_VERSION} https://github.com/kubernetes-csi/csi-test.git /tmp/csi-test
+          cd /tmp/csi-test/cmd/csi-sanity
+          go build -o csi-sanity .
           sudo mv csi-sanity /usr/local/bin/
-          rm csi-sanity-${CSI_SANITY_VERSION}-linux-amd64.tar.gz
+          cd -
+          rm -rf /tmp/csi-test
 
       - name: Run CSI Sanity tests
         run: |

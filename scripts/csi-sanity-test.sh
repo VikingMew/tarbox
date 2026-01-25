@@ -18,10 +18,13 @@ echo ""
 # Check if csi-sanity is installed
 if ! command -v csi-sanity &> /dev/null; then
     echo "Installing csi-sanity ${CSI_SANITY_VERSION}..."
-    wget -q "https://github.com/kubernetes-csi/csi-test/releases/download/${CSI_SANITY_VERSION}/csi-sanity-${CSI_SANITY_VERSION}-linux-amd64.tar.gz"
-    tar -xzf "csi-sanity-${CSI_SANITY_VERSION}-linux-amd64.tar.gz"
+    # csi-sanity doesn't provide pre-built binaries, build from source
+    git clone --depth 1 --branch "${CSI_SANITY_VERSION}" https://github.com/kubernetes-csi/csi-test.git /tmp/csi-test
+    cd /tmp/csi-test/cmd/csi-sanity
+    go build -o csi-sanity .
     sudo mv csi-sanity /usr/local/bin/
-    rm "csi-sanity-${CSI_SANITY_VERSION}-linux-amd64.tar.gz"
+    cd -
+    rm -rf /tmp/csi-test
     echo "✓ csi-sanity installed"
 fi
 
