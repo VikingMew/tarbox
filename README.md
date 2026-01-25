@@ -58,6 +58,7 @@ Tarbox is a FUSE filesystem that stores everything in PostgreSQL. It's designed 
 
 - PostgreSQL 16+
 - FUSE3 (Linux: `libfuse3-dev`)
+- Protocol Buffers Compiler (Linux: `protobuf-compiler`)
 - Rust 1.92+ (only for native build)
 
 ### Option 1: Docker Compose (Recommended)

@@ -18,6 +18,7 @@ FROM chef AS builder
 RUN apt-get update && apt-get install -y \
     pkg-config \
     libfuse3-dev \
+    protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*
 
 # Build dependencies only (this layer will be cached)
