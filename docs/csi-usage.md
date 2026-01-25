@@ -113,9 +113,11 @@ kubectl create secret generic tarbox-db \
   -n tarbox-system
 
 # 3. 部署 CSI 组件
-kubectl apply -f deploy/kubernetes/csidriver.yaml
-kubectl apply -f deploy/kubernetes/controller.yaml
-kubectl apply -f deploy/kubernetes/node.yaml
+kubectl apply -f deploy/csi/csidriver.yaml
+kubectl apply -f deploy/csi/controller-rbac.yaml
+kubectl apply -f deploy/csi/controller-deployment.yaml
+kubectl apply -f deploy/csi/node-rbac.yaml
+kubectl apply -f deploy/csi/node-daemonset.yaml
 
 # 4. 验证
 kubectl get pods -n tarbox-system
@@ -382,10 +384,16 @@ curl http://localhost:9090/metrics
 ```
 
 可用指标：
-- `tarbox_csi_operations_total{operation="CreateVolume"}` - 操作计数
-- `tarbox_csi_operation_duration_seconds` - 操作延迟
-- `tarbox_csi_volumes_total` - 当前卷数量
-- `tarbox_csi_snapshots_total` - 快照数量
+- `tarbox_csi_operations_total{method="CreateVolume"}` - 操作计数
+- `tarbox_csi_operation_duration_seconds{method="CreateVolume"}` - 操作延迟
+- `tarbox_csi_operation_errors_total{method="CreateVolume"}` - 操作错误
+- `tarbox_volume_count{namespace="default"}` - 各命名空间卷数量
+- `tarbox_volume_capacity{volume_id="..."}` - 卷容量（字节）
+- `tarbox_volume_used{volume_id="..."}` - 卷已用空间（字节）
+- `tarbox_mount_count{volume_id="..."}` - 活跃挂载数
+- `tarbox_mount_duration_seconds` - 挂载操作延迟
+- `tarbox_snapshot_count` - 总快照数
+- `tarbox_snapshot_size{snapshot_id="..."}` - 快照大小（字节）
 
 ### 事件查看
 
@@ -470,11 +478,10 @@ kubectl get volumesnapshotclass tarbox-snapshot
 # 在 PostgreSQL 中执行
 EXPLAIN ANALYZE SELECT * FROM inodes WHERE tenant_id = '...';
 
-# 2. 启用 Tarbox 缓存（如未启用）
-# 在 deployment 中添加环境变量
-env:
-- name: TARBOX_CACHE_SIZE
-  value: "1000"
+# 2. 调整 Tarbox 缓存配置（如未启用）
+# 在 deployment 中添加环境变量（通过配置文件或环境变量）
+# 注意：当前缓存配置需要通过 config.toml 文件设置
+# 默认值: max_entries=10000, ttl_seconds=300
 
 # 3. 监控数据库连接数
 kubectl exec -n kube-system deploy/tarbox-csi-controller -- \
@@ -547,7 +554,7 @@ kubectl delete volumesnapshot --all -n <namespace>
 helm uninstall tarbox-csi -n kube-system
 
 # 或手动删除资源
-kubectl delete -f deploy/kubernetes/
+kubectl delete -f deploy/csi/
 
 # 4. 删除 CSIDriver
 kubectl delete csidriver tarbox.csi.io
