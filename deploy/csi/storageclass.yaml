@@ -1,0 +1,29 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: tarbox
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"
+provisioner: tarbox.csi.io
+parameters:
+  # These parameters are passed to CreateVolume
+  # and used to configure the Tarbox filesystem
+
+  # PostgreSQL connection (override via Secret if needed)
+  # database-url: "postgresql://tarbox:password@tarbox-db:5432/tarbox"
+
+  # Layer management
+  enable-layers: "true"
+  auto-checkpoint: "true"
+
+  # Performance tuning
+  cache-size: "1Gi"
+
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+reclaimPolicy: Delete
+
+# Mount options for FUSE
+mountOptions:
+  - allow_other
+  - default_permissions

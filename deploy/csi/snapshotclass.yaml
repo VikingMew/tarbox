@@ -1,0 +1,10 @@
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshotClass
+metadata:
+  name: tarbox-snapshot
+driver: tarbox.csi.io
+deletionPolicy: Delete
+parameters:
+  # Tarbox uses layers for snapshots
+  # Snapshots are implemented as new layers with parent references
+  snapshot-type: "layer"

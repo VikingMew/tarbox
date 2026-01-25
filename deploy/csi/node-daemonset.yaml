@@ -1,0 +1,142 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: tarbox-csi-node
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      app: tarbox-csi-node
+  template:
+    metadata:
+      labels:
+        app: tarbox-csi-node
+    spec:
+      serviceAccountName: tarbox-csi-node
+      hostNetwork: true
+      hostPID: true
+      priorityClassName: system-node-critical
+      tolerations:
+        - operator: Exists
+      containers:
+        # Tarbox CSI Node
+        - name: tarbox-csi
+          image: tarbox/csi-driver:latest
+          args:
+            - "--mode=node"
+            - "--endpoint=unix:///csi/csi-node.sock"
+            - "--database-url=$(DATABASE_URL)"
+            - "--node-id=$(NODE_ID)"
+            - "--metrics-addr=:9091"
+            - "--v=5"
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: tarbox-db-credentials
+                  key: url
+            - name: NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          securityContext:
+            privileged: true
+            capabilities:
+              add: ["SYS_ADMIN"]
+            allowPrivilegeEscalation: true
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+            - name: pods-mount-dir
+              mountPath: /var/lib/kubelet/pods
+              mountPropagation: Bidirectional
+            - name: plugin-dir
+              mountPath: /var/lib/kubelet/plugins
+              mountPropagation: Bidirectional
+            - name: device-dir
+              mountPath: /dev
+          ports:
+            - name: metrics
+              containerPort: 9091
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 9808
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+
+        # CSI Node Driver Registrar
+        - name: node-driver-registrar
+          image: registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.10.0
+          args:
+            - "--csi-address=/csi/csi-node.sock"
+            - "--kubelet-registration-path=/var/lib/kubelet/plugins/tarbox.csi.io/csi-node.sock"
+            - "--v=5"
+          env:
+            - name: KUBE_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+            - name: registration-dir
+              mountPath: /registration
+          resources:
+            requests:
+              cpu: 10m
+              memory: 20Mi
+            limits:
+              cpu: 100m
+              memory: 100Mi
+
+        # Liveness Probe
+        - name: liveness-probe
+          image: registry.k8s.io/sig-storage/livenessprobe:v2.12.0
+          args:
+            - "--csi-address=/csi/csi-node.sock"
+            - "--probe-timeout=3s"
+            - "--health-port=9808"
+            - "--v=2"
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+          resources:
+            requests:
+              cpu: 10m
+              memory: 20Mi
+            limits:
+              cpu: 100m
+              memory: 100Mi
+
+      volumes:
+        - name: socket-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins/tarbox.csi.io
+            type: DirectoryOrCreate
+        - name: registration-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins_registry
+            type: Directory
+        - name: pods-mount-dir
+          hostPath:
+            path: /var/lib/kubelet/pods
+            type: Directory
+        - name: plugin-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins
+            type: Directory
+        - name: device-dir
+          hostPath:
+            path: /dev
+            type: Directory

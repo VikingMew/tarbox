@@ -1,0 +1,26 @@
+apiVersion: storage.k8s.io/v1
+kind: CSIDriver
+metadata:
+  name: tarbox.csi.io
+spec:
+  # Attach is not required since we handle mounting in NodeStageVolume
+  attachRequired: false
+
+  # Pod info is needed to map PVC to tenant
+  podInfoOnMount: true
+
+  # Support volume expansion
+  volumeLifecycleModes:
+    - Persistent
+    - Ephemeral
+
+  # Tarbox CSI driver supports both filesystem and block volumes
+  # but we primarily use filesystem mode
+  fsGroupPolicy: File
+
+  # Token requests for service account authentication
+  tokenRequests:
+    - audience: "tarbox.csi.io"
+
+  # Storage capacity tracking
+  storageCapacity: true

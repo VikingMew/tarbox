@@ -1,0 +1,168 @@
+# Default values for tarbox-csi
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+image:
+  repository: tarbox/csi-driver
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# PostgreSQL database configuration
+database:
+  # Connection URL - can be overridden via existingSecret
+  url: "postgresql://tarbox:password@tarbox-db:5432/tarbox"
+  # Use existing secret for database credentials
+  existingSecret: ""
+  # Key in the secret containing the database URL
+  secretKey: "url"
+
+# Controller configuration
+controller:
+  replicas: 2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Node selector
+  nodeSelector: {}
+
+  # Tolerations
+  tolerations:
+    - key: CriticalAddonsOnly
+      operator: Exists
+
+  # Affinity - anti-affinity by default
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app: tarbox-csi-controller
+            topologyKey: kubernetes.io/hostname
+
+# Node configuration
+node:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+  # Node selector
+  nodeSelector: {}
+
+  # Tolerations - tolerate all taints by default
+  tolerations:
+    - operator: Exists
+
+# CSI sidecar images
+sidecars:
+  provisioner:
+    image: registry.k8s.io/sig-storage/csi-provisioner:v4.0.0
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+
+  snapshotter:
+    image: registry.k8s.io/sig-storage/csi-snapshotter:v7.0.1
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+
+  resizer:
+    image: registry.k8s.io/sig-storage/csi-resizer:v1.10.0
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+
+  registrar:
+    image: registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.10.0
+    resources:
+      requests:
+        cpu: 10m
+        memory: 20Mi
+      limits:
+        cpu: 100m
+        memory: 100Mi
+
+  livenessProbe:
+    image: registry.k8s.io/sig-storage/livenessprobe:v2.12.0
+    resources:
+      requests:
+        cpu: 10m
+        memory: 20Mi
+      limits:
+        cpu: 100m
+        memory: 100Mi
+
+# StorageClass configuration
+storageClass:
+  create: true
+  name: tarbox
+  isDefault: false
+  reclaimPolicy: Delete
+  volumeBindingMode: WaitForFirstConsumer
+  allowVolumeExpansion: true
+  mountOptions:
+    - allow_other
+    - default_permissions
+  parameters:
+    enable-layers: "true"
+    auto-checkpoint: "true"
+    cache-size: "1Gi"
+
+# VolumeSnapshotClass configuration
+volumeSnapshotClass:
+  create: true
+  name: tarbox-snapshot
+  deletionPolicy: Delete
+  parameters:
+    snapshot-type: "layer"
+
+# Metrics configuration
+metrics:
+  enabled: true
+  port: 9090
+  nodePort: 9091
+
+# RBAC configuration
+rbac:
+  create: true
+
+# ServiceAccount configuration
+serviceAccount:
+  create: true
+  annotations: {}
+  controller:
+    name: tarbox-csi-controller
+  node:
+    name: tarbox-csi-node
+
+# Priority class
+priorityClassName:
+  controller: system-cluster-critical
+  node: system-node-critical

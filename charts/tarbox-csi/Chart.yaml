@@ -1,0 +1,18 @@
+apiVersion: v2
+name: tarbox-csi
+description: Tarbox CSI Driver for Kubernetes - PostgreSQL-based filesystem with multi-tenancy
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - storage
+  - csi
+  - filesystem
+  - postgresql
+  - multi-tenant
+home: https://github.com/yourusername/tarbox
+sources:
+  - https://github.com/yourusername/tarbox
+maintainers:
+  - name: Tarbox Team
+    email: team@tarbox.io

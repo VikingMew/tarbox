@@ -1,4 +1,5 @@
 pub mod config;
+pub mod csi;
 pub mod fs;
 pub mod fuse;
 pub mod layer;
