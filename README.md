@@ -173,6 +173,8 @@ graph TB
 - **[Quick Start](#-quick-start)** - Get started in 5 minutes (see above)
 - **[CLI Reference](#cli-reference)** - All commands and options
 - **[Configuration](CLAUDE.md#configuration)** - Database and filesystem settings
+- **[WASI Usage Guide](docs/wasi-usage.md)** - Using Tarbox with WebAssembly
+- **[Kubernetes CSI Guide](docs/csi-usage.md)** - Deploy as K8s storage plugin
 
 ### Developer Documentation
 
