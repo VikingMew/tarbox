@@ -173,8 +173,8 @@ graph TB
 - **[快速开始](#-快速开始)** - 5 分钟上手（见上文）
 - **[CLI 参考](#cli-参考)** - 所有命令和选项
 - **[配置](CLAUDE.md#configuration)** - 数据库和文件系统设置
-- **[WASI 使用指南](docs/wasi-usage.md)** - 在 WebAssembly 中使用 Tarbox
 - **[Kubernetes CSI 指南](docs/csi-usage.md)** - 部署为 K8s 存储插件
+- **[WASI 适配器指南](docs/wasi-usage.md)** - WASI 文件系统后端（crate 开发中）
 
 ### 开发者文档
 
