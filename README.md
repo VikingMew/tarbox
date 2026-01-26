@@ -28,6 +28,8 @@ Tarbox is a FUSE filesystem that stores everything in PostgreSQL. It's designed 
 - **Multi-tenancy** - Complete data isolation per tenant
 - **Cloud-native** - Ready for Kubernetes deployment
 
+**⚠️ Alpha Stage**: Tarbox is currently in alpha. Core features are functional and tested, but the project is under active development. We welcome early adopters to test and provide feedback on real-world use cases!
+
 **Current Status**: Core filesystem, layered storage, and Kubernetes CSI driver are production-ready. Audit logging and WASI adapter are under development.
 
 **Platform Support**: Linux is fully supported. macOS support is incomplete due to `fuser` crate limitations (requires macFUSE and conditional compilation). See [Task 17](task/17-macos-fuse-support.md) for details.

@@ -28,6 +28,8 @@ Tarbox 是一个将所有数据存储在 PostgreSQL 中的 FUSE 文件系统。�
 - **多租户** - 每个租户完全数据隔离
 - **云原生** - 准备好 Kubernetes 部署
 
+**⚠️ Alpha 阶段**：Tarbox 目前处于 alpha 阶段。核心功能已可用并经过测试，但项目仍在积极开发中。我们欢迎早期用户测试并针对真实场景提供反馈！
+
 **当前状态**：核心文件系统、分层存储和 Kubernetes CSI 驱动已可用于生产。审计日志和 WASI 适配器正在开发中。
 
 **平台支持**：完全支持 Linux。由于 `fuser` crate 的限制，macOS 支持尚不完整（需要 macFUSE 和条件编译）。详见 [Task 17](task/17-macos-fuse-support.md)。
