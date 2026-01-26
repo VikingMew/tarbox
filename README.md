@@ -28,7 +28,7 @@ Tarbox is a FUSE filesystem that stores everything in PostgreSQL. It's designed 
 - **Multi-tenancy** - Complete data isolation per tenant
 - **Cloud-native** - Ready for Kubernetes deployment
 
-**Current Status**: Core filesystem and layered filesystem are production-ready. Advanced features like audit integration and performance optimization are next on the roadmap.
+**Current Status**: Core filesystem, layered storage, and Kubernetes CSI driver are production-ready. Audit logging and WASI adapter are under development.
 
 **Platform Support**: Linux is fully supported. macOS support is incomplete due to `fuser` crate limitations (requires macFUSE and conditional compilation). See [Task 17](task/17-macos-fuse-support.md) for details.
 
@@ -44,11 +44,16 @@ Tarbox is a FUSE filesystem that stores everything in PostgreSQL. It's designed 
 - **Version Control**: Docker-style layers with Git-like text diffs, checkpoint and restore any state
 - **Smart File Storage**: Line-level COW for text files, block-level COW for binaries, automatic encoding detection
 - **CLI + Mount**: Manage via command line or mount as standard directory
+- **Kubernetes CSI Driver**: Deploy as K8s storage plugin with snapshot support and multi-tenant isolation
+- **REST API**: HTTP/JSON API for remote access (Task 14 complete)
+- **gRPC API**: High-performance RPC interface (Task 15 complete)
 
 ### 🚧 In Development
 
-- **Audit Logging**: Track every file operation for compliance (database schema complete, integration in progress)
-- **Performance Optimization**: LRU cache for metadata and blocks, query tuning
+- **Audit Logging Integration**: Database schema complete, filesystem integration in progress (Task 11)
+- **WASI Adapter**: File descriptor-based API for WASI runtimes, crate planning complete (spec/13, spec/17)
+- **Performance Optimization**: LRU cache implementation and query tuning
+- **macOS Support**: FUSE adapter for macFUSE (Task 17)
 
 ---
 

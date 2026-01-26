@@ -28,7 +28,7 @@ Tarbox 是一个将所有数据存储在 PostgreSQL 中的 FUSE 文件系统。�
 - **多租户** - 每个租户完全数据隔离
 - **云原生** - 准备好 Kubernetes 部署
 
-**当前状态**：核心文件系统和分层文件系统已可用于生产。审计集成和性能优化等高级功能是下一步的路线图。
+**当前状态**：核心文件系统、分层存储和 Kubernetes CSI 驱动已可用于生产。审计日志和 WASI 适配器正在开发中。
 
 **平台支持**：完全支持 Linux。由于 `fuser` crate 的限制，macOS 支持尚不完整（需要 macFUSE 和条件编译）。详见 [Task 17](task/17-macos-fuse-support.md)。
 
@@ -44,11 +44,16 @@ Tarbox 是一个将所有数据存储在 PostgreSQL 中的 FUSE 文件系统。�
 - **版本控制**：Docker 风格的层和 Git 风格的文本差异，可检查点和恢复任意状态
 - **智能文件存储**：文本文件行级 COW，二进制文件块级 COW，自动编码检测
 - **CLI + 挂载**：通过命令行管理或挂载为标准目录
+- **Kubernetes CSI 驱动**：作为 K8s 存储插件部署，支持快照和多租户隔离
+- **REST API**：HTTP/JSON API 用于远程访问（Task 14 已完成）
+- **gRPC API**：高性能 RPC 接口（Task 15 已完成）
 
 ### 🚧 开发中
 
-- **审计日志**：追踪每个文件操作以满足合规要求（数据库 schema 已完成，集成进行中）
-- **性能优化**：元数据和数据块的 LRU 缓存，查询调优
+- **审计日志集成**：数据库 schema 已完成，文件系统集成进行中（Task 11）
+- **WASI 适配器**：用于 WASI 运行时的文件描述符 API，crate 规划已完成（spec/13, spec/17）
+- **性能优化**：LRU 缓存实现和查询调优
+- **macOS 支持**：macFUSE 的 FUSE 适配器（Task 17）
 
 ---
 
