@@ -178,5 +178,5 @@ When adding entries:
 - Group changes by type (Added, Changed, Deprecated, Removed, Fixed, Security)
 - Keep entries concise but descriptive
 
-[Unreleased]: https://github.com/yourusername/tarbox/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/yourusername/tarbox/releases/tag/v0.1.0
+[Unreleased]: https://github.com/vikingmew/tarbox/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/vikingmew/tarbox/releases/tag/v0.1.0
