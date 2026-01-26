@@ -47,15 +47,15 @@ Tarbox is a FUSE filesystem that stores everything in PostgreSQL. It's designed 
 - **Smart File Storage**: Line-level COW for text files, block-level COW for binaries, automatic encoding detection
 - **CLI + Mount**: Manage via command line or mount as standard directory
 - **Kubernetes CSI Driver**: Deploy as K8s storage plugin with snapshot support and multi-tenant isolation
-- **REST API**: HTTP/JSON API for remote access (Task 14 complete)
-- **gRPC API**: High-performance RPC interface (Task 15 complete)
+- **REST API**: HTTP/JSON API for remote access
+- **gRPC API**: High-performance RPC interface
 
 ### 🚧 In Development
 
-- **Audit Logging Integration**: Database schema complete, filesystem integration in progress (Task 11)
-- **WASI Adapter**: File descriptor-based API for WASI runtimes, crate planning complete (spec/13, spec/17)
+- **Audit Logging Integration**: Database schema complete, filesystem integration in progress
+- **WASI Adapter**: File descriptor-based API for WASI runtimes, crate planning complete
 - **Performance Optimization**: LRU cache implementation and query tuning
-- **macOS Support**: FUSE adapter for macFUSE (Task 17)
+- **macOS Support**: FUSE adapter for macFUSE
 
 ---
 
@@ -144,19 +144,19 @@ tarbox umount /mnt/tarbox
 graph TB
     Apps[Applications / AI Agents]
     FUSE[FUSE Interface<br/>POSIX Operations]
-    
+
     subgraph Core[Tarbox Core]
         FS[Filesystem Layer<br/>• Path resolution<br/>• Inode management<br/>• Permission control]
         Storage[Storage Layer<br/>• Tenants & inodes<br/>• Data blocks<br/>• Layers & audit]
     end
-    
+
     DB[(PostgreSQL<br/>• tenants, inodes, blocks<br/>• layers, audit_logs<br/>• text_blocks)]
-    
+
     Apps --> FUSE
     FUSE --> FS
     FS --> Storage
     Storage --> DB
-    
+
     style Apps fill:#e1f5ff
     style FUSE fill:#fff3e0
     style Core fill:#f3e5f5

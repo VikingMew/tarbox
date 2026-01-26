@@ -47,15 +47,15 @@ Tarbox 是一个将所有数据存储在 PostgreSQL 中的 FUSE 文件系统。�
 - **智能文件存储**：文本文件行级 COW，二进制文件块级 COW，自动编码检测
 - **CLI + 挂载**：通过命令行管理或挂载为标准目录
 - **Kubernetes CSI 驱动**：作为 K8s 存储插件部署，支持快照和多租户隔离
-- **REST API**：HTTP/JSON API 用于远程访问（Task 14 已完成）
-- **gRPC API**：高性能 RPC 接口（Task 15 已完成）
+- **REST API**：HTTP/JSON API 用于远程访问
+- **gRPC API**：高性能 RPC 接口
 
 ### 🚧 开发中
 
-- **审计日志集成**：数据库 schema 已完成，文件系统集成进行中（Task 11）
-- **WASI 适配器**：用于 WASI 运行时的文件描述符 API，crate 规划已完成（spec/13, spec/17）
+- **审计日志集成**：数据库 schema 已完成，文件系统集成进行中
+- **WASI 适配器**：用于 WASI 运行时的文件描述符 API，crate 规划已完成
 - **性能优化**：LRU 缓存实现和查询调优
-- **macOS 支持**：macFUSE 的 FUSE 适配器（Task 17）
+- **macOS 支持**：macFUSE 的 FUSE 适配器
 
 ---
 
@@ -144,19 +144,19 @@ tarbox umount /mnt/tarbox
 graph TB
     Apps[应用程序 / AI Agents]
     FUSE[FUSE 接口<br/>POSIX 操作]
-    
+
     subgraph Core[Tarbox 核心]
         FS[文件系统层<br/>• 路径解析<br/>• Inode 管理<br/>• 权限控制]
         Storage[存储层<br/>• 租户与 inodes<br/>• 数据块<br/>• 层与审计]
     end
-    
+
     DB[(PostgreSQL<br/>• tenants, inodes, blocks<br/>• layers, audit_logs<br/>• text_blocks)]
-    
+
     Apps --> FUSE
     FUSE --> FS
     FS --> Storage
     Storage --> DB
-    
+
     style Apps fill:#e1f5ff
     style FUSE fill:#fff3e0
     style Core fill:#f3e5f5
