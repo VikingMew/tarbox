@@ -1,3 +1,4 @@
+pub mod composition;
 pub mod config;
 pub mod csi;
 pub mod fs;

@@ -36,6 +36,8 @@ impl<'a> SnapshotManager<'a> {
                 description: Some(format!("Snapshot: {}", snapshot_name)),
                 tags: None,
                 created_by: "csi-driver".to_string(),
+                mount_entry_id: None,
+                is_working: false,
             })
             .await
             .context("Failed to create snapshot layer")?;

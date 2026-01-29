@@ -97,6 +97,8 @@ impl<'a> LayerManager<'a> {
                 description: Some("Initial base layer".to_string()),
                 tags: None,
                 created_by: "system".to_string(),
+                mount_entry_id: None,
+                is_working: false,
             })
             .await?;
 
@@ -167,6 +169,8 @@ impl<'a> LayerManager<'a> {
                 description: description.map(String::from),
                 tags: None,
                 created_by: "user".to_string(),
+                mount_entry_id: None,
+                is_working: false,
             })
             .await?;
 

@@ -27,12 +27,12 @@ impl<'a> LayerRepository for LayerOperations<'a> {
             r#"
             INSERT INTO layers (
                 layer_id, tenant_id, parent_layer_id, layer_name, description,
-                status, is_readonly, tags, created_by
+                status, is_readonly, tags, created_by, mount_entry_id, is_working
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             RETURNING layer_id, tenant_id, parent_layer_id, layer_name, description,
                       file_count, total_size, status, is_readonly, tags,
-                      created_at, created_by
+                      created_at, created_by, mount_entry_id, is_working
             "#,
         )
         .bind(layer_id)
@@ -44,6 +44,8 @@ impl<'a> LayerRepository for LayerOperations<'a> {
         .bind(false) // is_readonly
         .bind(&input.tags)
         .bind(&input.created_by)
+        .bind(input.mount_entry_id)
+        .bind(input.is_working)
         .fetch_one(self.pool)
         .await?;
 
@@ -62,7 +64,7 @@ impl<'a> LayerRepository for LayerOperations<'a> {
             r#"
             SELECT layer_id, tenant_id, parent_layer_id, layer_name, description,
                    file_count, total_size, status, is_readonly, tags,
-                   created_at, created_by
+                   created_at, created_by, mount_entry_id, is_working
             FROM layers
             WHERE tenant_id = $1 AND layer_id = $2
             "#,
@@ -80,7 +82,7 @@ impl<'a> LayerRepository for LayerOperations<'a> {
             r#"
             SELECT layer_id, tenant_id, parent_layer_id, layer_name, description,
                    file_count, total_size, status, is_readonly, tags,
-                   created_at, created_by
+                   created_at, created_by, mount_entry_id, is_working
             FROM layers
             WHERE tenant_id = $1
             ORDER BY created_at DESC
@@ -99,7 +101,7 @@ impl<'a> LayerRepository for LayerOperations<'a> {
             WITH RECURSIVE layer_chain AS (
                 SELECT layer_id, tenant_id, parent_layer_id, layer_name, description,
                        file_count, total_size, status, is_readonly, tags,
-                       created_at, created_by, 0 as depth
+                       created_at, created_by, mount_entry_id, is_working, 0 as depth
                 FROM layers
                 WHERE layer_id = $2 AND tenant_id = $1
 
@@ -107,14 +109,14 @@ impl<'a> LayerRepository for LayerOperations<'a> {
 
                 SELECT l.layer_id, l.tenant_id, l.parent_layer_id, l.layer_name, l.description,
                        l.file_count, l.total_size, l.status, l.is_readonly, l.tags,
-                       l.created_at, l.created_by, lc.depth + 1
+                       l.created_at, l.created_by, l.mount_entry_id, l.is_working, lc.depth + 1
                 FROM layers l
                 INNER JOIN layer_chain lc ON l.layer_id = lc.parent_layer_id
                 WHERE l.tenant_id = $1
             )
             SELECT layer_id, tenant_id, parent_layer_id, layer_name, description,
                    file_count, total_size, status, is_readonly, tags,
-                   created_at, created_by
+                   created_at, created_by, mount_entry_id, is_working
             FROM layer_chain
             ORDER BY depth
             "#,
@@ -253,6 +255,221 @@ impl<'a> LayerRepository for LayerOperations<'a> {
 
         Ok(())
     }
+
+    // Mount-level layer chains (Task 21)
+
+    async fn create_initial_layers(
+        &self,
+        tenant_id: Uuid,
+        mount_entry_id: Uuid,
+    ) -> Result<(Layer, Layer)> {
+        // Create base layer
+        let base_layer = self
+            .create(CreateLayerInput {
+                tenant_id,
+                parent_layer_id: None,
+                layer_name: format!("base-{}", mount_entry_id),
+                description: Some("Initial base layer".to_string()),
+                tags: None,
+                created_by: "system".to_string(),
+                mount_entry_id: Some(mount_entry_id),
+                is_working: false,
+            })
+            .await?;
+
+        // Create working layer
+        let working_layer = self
+            .create(CreateLayerInput {
+                tenant_id,
+                parent_layer_id: Some(base_layer.layer_id),
+                layer_name: format!("working-{}", mount_entry_id),
+                description: Some("Working layer".to_string()),
+                tags: None,
+                created_by: "system".to_string(),
+                mount_entry_id: Some(mount_entry_id),
+                is_working: true,
+            })
+            .await?;
+
+        tracing::info!(
+            mount_entry_id = %mount_entry_id,
+            base_layer_id = %base_layer.layer_id,
+            working_layer_id = %working_layer.layer_id,
+            "Created initial layer chain for mount"
+        );
+
+        Ok((base_layer, working_layer))
+    }
+
+    async fn get_mount_layers(&self, mount_entry_id: Uuid) -> Result<Vec<Layer>> {
+        let layers = sqlx::query_as::<_, Layer>(
+            r#"
+            SELECT layer_id, tenant_id, parent_layer_id, layer_name, description,
+                   file_count, total_size, status, is_readonly, tags,
+                   created_at, created_by, mount_entry_id, is_working
+            FROM layers
+            WHERE mount_entry_id = $1
+            ORDER BY created_at
+            "#,
+        )
+        .bind(mount_entry_id)
+        .fetch_all(self.pool)
+        .await?;
+
+        Ok(layers)
+    }
+
+    async fn get_working_layer(&self, mount_entry_id: Uuid) -> Result<Option<Layer>> {
+        let layer = sqlx::query_as::<_, Layer>(
+            r#"
+            SELECT layer_id, tenant_id, parent_layer_id, layer_name, description,
+                   file_count, total_size, status, is_readonly, tags,
+                   created_at, created_by, mount_entry_id, is_working
+            FROM layers
+            WHERE mount_entry_id = $1 AND is_working = true
+            "#,
+        )
+        .bind(mount_entry_id)
+        .fetch_optional(self.pool)
+        .await?;
+
+        Ok(layer)
+    }
+
+    async fn create_snapshot(
+        &self,
+        mount_entry_id: Uuid,
+        name: &str,
+        description: Option<String>,
+    ) -> Result<Layer> {
+        // Get current working layer
+        let working_layer = self
+            .get_working_layer(mount_entry_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Working layer not found for mount"))?;
+
+        // Set working layer to snapshot (is_working = false)
+        sqlx::query(
+            r#"
+            UPDATE layers
+            SET is_working = false,
+                layer_name = $2,
+                description = $3
+            WHERE layer_id = $1
+            "#,
+        )
+        .bind(working_layer.layer_id)
+        .bind(name)
+        .bind(description.as_deref())
+        .execute(self.pool)
+        .await?;
+
+        // Create new working layer
+        let new_working_layer = self
+            .create(CreateLayerInput {
+                tenant_id: working_layer.tenant_id,
+                parent_layer_id: Some(working_layer.layer_id),
+                layer_name: format!("working-{}", mount_entry_id),
+                description: Some("Working layer".to_string()),
+                tags: None,
+                created_by: "system".to_string(),
+                mount_entry_id: Some(mount_entry_id),
+                is_working: true,
+            })
+            .await?;
+
+        tracing::info!(
+            mount_entry_id = %mount_entry_id,
+            snapshot_name = %name,
+            old_working_layer_id = %working_layer.layer_id,
+            new_working_layer_id = %new_working_layer.layer_id,
+            "Created snapshot for mount"
+        );
+
+        Ok(new_working_layer)
+    }
+
+    async fn batch_snapshot(
+        &self,
+        tenant_id: Uuid,
+        mount_names: &[String],
+        name: &str,
+        skip_unchanged: bool,
+    ) -> Result<Vec<crate::composition::SnapshotResult>> {
+        use crate::composition::SnapshotResult;
+
+        let mut results = Vec::new();
+
+        // For now, process sequentially (could be optimized with transactions)
+        for mount_name in mount_names {
+            // Get mount entry
+            let mount_result = sqlx::query_as::<_, (Uuid, Uuid)>(
+                "SELECT mount_entry_id, current_layer_id FROM mount_entries WHERE tenant_id = $1 AND name = $2"
+            )
+            .bind(tenant_id)
+            .bind(mount_name)
+            .fetch_optional(self.pool)
+            .await;
+
+            match mount_result {
+                Ok(Some((mount_entry_id, _current_layer_id))) => {
+                    // Check if working layer has changes
+                    if skip_unchanged {
+                        let working_layer = self.get_working_layer(mount_entry_id).await?;
+                        if let Some(layer) = working_layer
+                            && layer.file_count == 0
+                        {
+                            results.push(SnapshotResult {
+                                mount_name: mount_name.clone(),
+                                layer_id: None,
+                                skipped: true,
+                                reason: Some("No changes".to_string()),
+                            });
+                            continue;
+                        }
+                    }
+
+                    // Create snapshot
+                    match self.create_snapshot(mount_entry_id, name, None).await {
+                        Ok(new_layer) => {
+                            results.push(SnapshotResult {
+                                mount_name: mount_name.clone(),
+                                layer_id: Some(new_layer.layer_id),
+                                skipped: false,
+                                reason: None,
+                            });
+                        }
+                        Err(e) => {
+                            results.push(SnapshotResult {
+                                mount_name: mount_name.clone(),
+                                layer_id: None,
+                                skipped: true,
+                                reason: Some(format!("Error: {}", e)),
+                            });
+                        }
+                    }
+                }
+                Ok(None) => {
+                    results.push(SnapshotResult {
+                        mount_name: mount_name.clone(),
+                        layer_id: None,
+                        skipped: true,
+                        reason: Some("Mount not found".to_string()),
+                    });
+                }
+                Err(e) => {
+                    results.push(SnapshotResult {
+                        mount_name: mount_name.clone(),
+                        layer_id: None,
+                        skipped: true,
+                        reason: Some(format!("Database error: {}", e)),
+                    });
+                }
+            }
+        }
+
+        Ok(results)
+    }
 }
 
 #[cfg(test)]
@@ -294,12 +511,15 @@ mod tests {
             description: Some("Base layer".to_string()),
             created_by: "system".to_string(),
             tags: None,
+            mount_entry_id: None,
+            is_working: false,
         };
 
         assert_eq!(input.layer_name, "base");
         assert_eq!(input.created_by, "system");
         assert!(input.parent_layer_id.is_none());
         assert!(input.description.is_some());
+        assert!(!input.is_working);
     }
 
     #[test]

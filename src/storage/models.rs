@@ -190,6 +190,10 @@ pub struct Layer {
     pub tags: Option<serde_json::Value>,
     pub created_at: DateTime<Utc>,
     pub created_by: String,
+
+    // Mount-level layer chains (Task 21)
+    pub mount_entry_id: Option<uuid::Uuid>,
+    pub is_working: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -200,6 +204,10 @@ pub struct CreateLayerInput {
     pub description: Option<String>,
     pub tags: Option<serde_json::Value>,
     pub created_by: String,
+
+    // Mount-level layer chains (Task 21)
+    pub mount_entry_id: Option<uuid::Uuid>,
+    pub is_working: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -376,3 +384,10 @@ mod tests {
         assert_eq!(input.data, data);
     }
 }
+
+// ============================================================================
+// Mount Entry Models (Filesystem Composition)
+// ============================================================================
+
+pub mod mount_entry;
+pub mod published_mount;

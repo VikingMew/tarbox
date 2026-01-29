@@ -30,6 +30,13 @@ Phase 4: 云原生 (进行中)        ████░░░░░░░░░░
 ├─ Task 15: gRPC API            📅 待开始
 ├─ Task 16: WASI 支持           ✅ 完成 (84% 覆盖率)
 └─ Task 17: macOS FUSE 支持     🚫 阻塞 (需要 macOS 环境)
+
+Phase 5: 文件系统组合 (计划中)  ░░░░░░░░░░░░░░░░░░░░ 0%
+├─ Task 19: 挂载条目基础设施     📅 待开始 (spec/18)
+├─ Task 20: Layer 发布机制      📅 待开始 (spec/18)
+├─ Task 21: 挂载点级别 Layer 链  📅 待开始 (spec/18)
+├─ Task 22: HTTP API 组合功能   📅 待开始 (spec/06)
+└─ Task 23: CLI 组合命令        📅 待开始 (spec/06)
 ```
 
 ## 任务列表
@@ -275,6 +282,108 @@ Phase 4: 云原生 (进行中)        ████░░░░░░░░░░
 
 ---
 
+### 🔗 Phase 5: 文件系统组合 (Filesystem Composition)
+
+> 基于 spec/18 和 spec/06 的文件系统组合功能，支持多源挂载、Layer 发布、跨租户共享。
+
+#### Task 19: 挂载条目基础设施
+- **状态**: 计划中
+- **文件**: [19-mount-entries-foundation.md](19-mount-entries-foundation.md)
+- **优先级**: P1
+- **依赖**: Task 02, Task 06, Task 08
+- **内容**:
+  - mount_entries 数据库表
+  - MountSource/MountMode 数据结构
+  - MountEntryRepository 实现
+  - 路径解析器 (PathResolver)
+  - 路径冲突检测
+- **预计工作量**: 2-3 天
+- **关联 Spec**: **spec/18-filesystem-composition.md**
+- **交付物**:
+  - `src/storage/models/mount_entry.rs`
+  - `src/storage/mount_entry.rs`
+  - `src/composition/resolver.rs`
+  - 45+ 测试
+
+#### Task 20: Layer 发布机制
+- **状态**: 计划中
+- **文件**: [20-layer-publishing.md](20-layer-publishing.md)
+- **优先级**: P1
+- **依赖**: Task 19, Task 08
+- **内容**:
+  - published_mounts 数据库表
+  - PublishTarget (Layer/WorkingLayer)
+  - PublishScope (Public/AllowList)
+  - 访问控制检查
+  - LayerPublisher 服务
+- **预计工作量**: 2-3 天
+- **关联 Spec**: **spec/18-filesystem-composition.md**
+- **交付物**:
+  - `src/storage/models/published_mount.rs`
+  - `src/storage/published_mount.rs`
+  - `src/composition/publisher.rs`
+  - 45+ 测试
+
+#### Task 21: 挂载点级别 Layer 链
+- **状态**: 计划中
+- **文件**: [21-mount-level-layer-chains.md](21-mount-level-layer-chains.md)
+- **优先级**: P1
+- **依赖**: Task 19, Task 20, Task 08
+- **内容**:
+  - 修改 layers 表（添加 mount_entry_id）
+  - 每个 WorkingLayer 挂载点独立 layer 链
+  - LayerChainManager 服务
+  - Snapshot 单个/多个挂载点
+  - 与 FileSystem 集成
+- **预计工作量**: 3-4 天
+- **关联 Spec**: **spec/18-filesystem-composition.md**
+- **交付物**:
+  - `src/composition/layer_chain.rs`
+  - 更新 `src/storage/layer.rs`
+  - 更新 `src/fs/operations.rs`
+  - 40+ 测试
+
+#### Task 22: HTTP API 组合功能
+- **状态**: 计划中
+- **文件**: [22-http-api-composition.md](22-http-api-composition.md)
+- **优先级**: P1
+- **依赖**: Task 19, Task 20, Task 21, Task 14
+- **内容**:
+  - 挂载管理 API (CRUD, import/export)
+  - Snapshot API (单个/批量)
+  - 发布 API (publish/unpublish)
+  - 路径解析 API (调试)
+  - DTO 和错误处理
+- **预计工作量**: 3-4 天
+- **关联 Spec**: **spec/06-api-design.md**
+- **交付物**:
+  - `src/api/routes/composition.rs`
+  - `src/api/handlers/composition.rs`
+  - `src/api/dto/composition.rs`
+  - 45+ 测试
+
+#### Task 23: CLI 组合命令
+- **状态**: 计划中
+- **文件**: [23-cli-composition-commands.md](23-cli-composition-commands.md)
+- **优先级**: P1
+- **依赖**: Task 19, Task 20, Task 21, Task 22
+- **内容**:
+  - mount 子命令 (apply/list/export/validate/clear/remove/enable/disable/update/resolve)
+  - snapshot 命令 (单个/多个/全部)
+  - publish 命令 (发布/取消发布/列出)
+  - layer 发布管理命令
+  - TOML 配置文件解析
+- **预计工作量**: 2-3 天
+- **关联 Spec**: **spec/06-api-design.md**
+- **交付物**:
+  - `src/cli/commands/mount.rs`
+  - `src/cli/commands/snapshot.rs`
+  - `src/cli/commands/publish.rs`
+  - `src/cli/config/mount_config.rs`
+  - 45+ 测试
+
+---
+
 ## 任务依赖关系图
 
 ```mermaid
@@ -315,6 +424,16 @@ graph TD
     T05 --> T17[Task 17: macOS FUSE 🚫]
     T14 --> T16
     
+    %% Phase 5: 文件系统组合
+    T06 --> T19[Task 19: 挂载条目]
+    T08 --> T19
+    T19 --> T20[Task 20: Layer 发布]
+    T19 --> T21[Task 21: 挂载点 Layer 链]
+    T20 --> T21
+    T21 --> T22[Task 22: HTTP API 组合]
+    T14 --> T22
+    T22 --> T23[Task 23: CLI 组合命令]
+    
     style T01 fill:#90EE90
     style T02 fill:#90EE90
     style T03 fill:#90EE90
@@ -329,7 +448,12 @@ graph TD
     style T13 fill:#FFB6C1
     style T14 fill:#FFB6C1
     style T15 fill:#FFB6C1
-    style T16 fill:#FFB6C1
+    style T16 fill:#90EE90
+    style T19 fill:#87CEEB
+    style T20 fill:#87CEEB
+    style T21 fill:#87CEEB
+    style T22 fill:#87CEEB
+    style T23 fill:#87CEEB
 ```
 
 ## 开发原则
@@ -383,6 +507,13 @@ cargo test
   - WASI 支持
   - 云原生部署
 
+- **M5** (计划中): 文件系统组合 - Task 19-23
+  - 多源挂载 (Host/Layer/Published/WorkingLayer)
+  - Layer 发布与访问控制
+  - 挂载点级别 Layer 链
+  - HTTP API 和 CLI 支持
+  - 跨租户共享能力
+
 ## 相关文档
 
 - **规范文档**: [../spec/](../spec/) - 架构设计和技术规范
@@ -391,6 +522,7 @@ cargo test
 
 ## 更新日志
 
+- 2026-01-29: 创建 Phase 5 文件系统组合任务 (Task 19-23)，基于 spec/18 和 spec/06
 - 2026-01-22: 创建 Task 11 (审计系统)，更新任务编号和依赖关系
 - 2026-01-22: Task 10 完成 (Layer/COW 集成)，M2 里程碑达成
 - 2026-01-19: Task 08 完成 (分层文件系统)，370+ 测试，75.27% 覆盖率

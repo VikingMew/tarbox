@@ -39,6 +39,8 @@ async fn test_layer_create() -> Result<()> {
         description: Some("Base layer".to_string()),
         tags: None,
         created_by: "test_user".to_string(),
+        mount_entry_id: None,
+        is_working: false,
     };
 
     let layer = layer_ops.create(input).await?;
@@ -66,6 +68,8 @@ async fn test_layer_get() -> Result<()> {
         description: None,
         tags: None,
         created_by: "test".to_string(),
+        mount_entry_id: None,
+        is_working: false,
     };
 
     let created = layer_ops.create(input).await?;
@@ -95,6 +99,8 @@ async fn test_layer_list() -> Result<()> {
             description: None,
             tags: None,
             created_by: "test".to_string(),
+            mount_entry_id: None,
+            is_working: false,
         };
         layer_ops.create(input).await?;
     }
@@ -123,6 +129,8 @@ async fn test_layer_chain() -> Result<()> {
         description: Some("Base layer".to_string()),
         tags: None,
         created_by: "test".to_string(),
+        mount_entry_id: None,
+        is_working: false,
     };
     let base = layer_ops.create(base_input).await?;
 
@@ -134,6 +142,8 @@ async fn test_layer_chain() -> Result<()> {
         description: Some("Child layer".to_string()),
         tags: None,
         created_by: "test".to_string(),
+        mount_entry_id: None,
+        is_working: false,
     };
     let child = layer_ops.create(child_input).await?;
 
@@ -145,6 +155,8 @@ async fn test_layer_chain() -> Result<()> {
         description: Some("Grandchild layer".to_string()),
         tags: None,
         created_by: "test".to_string(),
+        mount_entry_id: None,
+        is_working: false,
     };
     let grandchild = layer_ops.create(grandchild_input).await?;
 
@@ -172,6 +184,8 @@ async fn test_layer_delete() -> Result<()> {
         description: None,
         tags: None,
         created_by: "test".to_string(),
+        mount_entry_id: None,
+        is_working: false,
     };
     let layer = layer_ops.create(input).await?;
 
@@ -217,6 +231,8 @@ async fn test_layer_add_entry() -> Result<()> {
         description: None,
         tags: None,
         created_by: "test".to_string(),
+        mount_entry_id: None,
+        is_working: false,
     };
     let layer = layer_ops.create(layer_input).await?;
 
@@ -259,6 +275,8 @@ async fn test_layer_list_entries() -> Result<()> {
         description: None,
         tags: None,
         created_by: "test".to_string(),
+        mount_entry_id: None,
+        is_working: false,
     };
     let layer = layer_ops.create(layer_input).await?;
 
@@ -317,6 +335,8 @@ async fn test_current_layer_tracking() -> Result<()> {
         description: None,
         tags: None,
         created_by: "test".to_string(),
+        mount_entry_id: None,
+        is_working: false,
     };
     let layer = layer_ops.create(layer_input).await?;
 
@@ -335,6 +355,8 @@ async fn test_current_layer_tracking() -> Result<()> {
         description: None,
         tags: None,
         created_by: "test".to_string(),
+        mount_entry_id: None,
+        is_working: false,
     };
     let layer2 = layer_ops.create(layer2_input).await?;
 
@@ -402,6 +424,8 @@ async fn test_layer_entry_change_types() -> Result<()> {
         description: None,
         tags: None,
         created_by: "test".to_string(),
+        mount_entry_id: None,
+        is_working: false,
     };
     let layer = layer_ops.create(layer_input).await?;
 

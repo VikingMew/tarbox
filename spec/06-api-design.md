@@ -68,6 +68,209 @@ pub trait FileSystem {
 }
 ```
 
+### Tenant API
+
+```rust
+pub trait TenantManager {
+    // Tenant 管理
+    async fn create_tenant(&self, input: CreateTenantInput) -> Result<Tenant>;
+    async fn get_tenant(&self, tenant_id: Uuid) -> Result<Option<Tenant>>;
+    async fn list_tenants(&self, filter: TenantFilter) -> Result<Vec<Tenant>>;
+    async fn update_tenant(&self, tenant_id: Uuid, input: UpdateTenantInput) -> Result<Tenant>;
+    async fn delete_tenant(&self, tenant_id: Uuid, force: bool) -> Result<()>;
+    
+    // Tenant 状态管理
+    async fn suspend_tenant(&self, tenant_id: Uuid, reason: &str) -> Result<()>;
+    async fn resume_tenant(&self, tenant_id: Uuid) -> Result<()>;
+    async fn get_tenant_status(&self, tenant_id: Uuid) -> Result<TenantStatus>;
+    
+    // Tenant 统计
+    async fn get_tenant_stats(&self, tenant_id: Uuid) -> Result<TenantStats>;
+    async fn get_storage_usage(&self, tenant_id: Uuid) -> Result<StorageUsage>;
+    async fn get_operation_stats(&self, tenant_id: Uuid, time_range: Duration) -> Result<OperationStats>;
+    
+    // 数据管理
+    async fn cleanup_tenant_data(&self, tenant_id: Uuid, options: CleanupOptions) -> Result<CleanupResult>;
+    async fn export_tenant_data(&self, tenant_id: Uuid, options: ExportOptions) -> Result<ExportJob>;
+    async fn import_tenant_data(&self, tenant_id: Uuid, options: ImportOptions) -> Result<ImportJob>;
+}
+
+// 数据结构
+pub struct CreateTenantInput {
+    pub tenant_name: String,
+    pub display_name: String,
+    pub storage_quota_bytes: i64,
+    pub metadata: Option<serde_json::Value>,
+}
+
+pub struct UpdateTenantInput {
+    pub display_name: Option<String>,
+    pub storage_quota_bytes: Option<i64>,
+    pub metadata: Option<serde_json::Value>,
+}
+
+pub struct TenantFilter {
+    pub status: Option<TenantStatus>,
+    pub limit: i32,
+    pub offset: i32,
+}
+
+pub struct TenantStats {
+    pub storage: StorageUsage,
+    pub layers: LayerStats,
+    pub operations: OperationStats,
+    pub last_access_at: Option<DateTime<Utc>>,
+}
+
+pub struct StorageUsage {
+    pub used_bytes: i64,
+    pub quota_bytes: i64,
+    pub usage_percentage: f64,
+    pub file_count: i64,
+    pub directory_count: i64,
+}
+
+pub struct CleanupOptions {
+    pub remove_deleted_files: bool,
+    pub vacuum_blocks: bool,
+    pub compress_layers: bool,
+}
+```
+
+### Composition API
+
+```rust
+/// 文件系统组合管理（参见 Spec 18）
+#[async_trait]
+pub trait CompositionManager {
+    /// 获取 Tenant 的组合配置
+    async fn get_composition(&self, tenant_id: Uuid) -> Result<TenantComposition>;
+    
+    /// 添加挂载
+    async fn add_mount(&self, tenant_id: Uuid, entry: CreateMountEntry) -> Result<MountEntry>;
+    
+    /// 更新挂载
+    async fn update_mount(&self, mount_entry_id: Uuid, update: UpdateMountEntry) -> Result<MountEntry>;
+    
+    /// 删除挂载
+    async fn remove_mount(&self, mount_entry_id: Uuid) -> Result<()>;
+    
+    /// 启用/禁用挂载
+    async fn set_mount_enabled(&self, mount_entry_id: Uuid, enabled: bool) -> Result<()>;
+    
+    /// 解析路径（返回实际数据源）
+    async fn resolve_path(&self, tenant_id: Uuid, path: &Path) -> Result<ResolvedPath>;
+}
+
+/// Layer 发布管理（参见 Spec 18）
+#[async_trait]
+pub trait LayerPublisher {
+    /// 发布 Layer（允许其他 tenant 只读访问）
+    async fn publish_layer(&self, input: PublishLayerInput) -> Result<()>;
+    
+    /// 取消发布
+    async fn unpublish_layer(&self, layer_id: Uuid) -> Result<()>;
+    
+    /// 获取已发布的 Layer 列表
+    async fn list_published_layers(&self, filter: PublishedLayerFilter) -> Result<Vec<PublishedLayer>>;
+    
+    /// 检查访问权限
+    async fn check_layer_access(&self, layer_id: Uuid, accessor_tenant_id: Uuid) -> Result<bool>;
+}
+
+// 挂载源类型
+pub enum MountSource {
+    /// 宿主机目录
+    Host { path: PathBuf },
+    
+    /// Tarbox Layer（可以是其他租户已发布的层）
+    Layer {
+        tenant_id: Uuid,
+        layer_id: Uuid,
+        subpath: Option<PathBuf>,
+    },
+    
+    /// 当前 Tenant 的工作层（owner 可写）
+    WorkingLayer,
+}
+
+// 挂载模式
+pub enum MountMode {
+    ReadOnly,      // 只读
+    ReadWrite,     // 读写（仅限 Host 或 WorkingLayer）
+    CopyOnWrite,   // 写时复制（读取来自源，写入到 WorkingLayer）
+}
+
+// 挂载条目
+pub struct MountEntry {
+    pub mount_entry_id: Uuid,
+    pub tenant_id: Uuid,
+    pub virtual_path: PathBuf,
+    pub source: MountSource,
+    pub mode: MountMode,
+    pub is_file: bool,      // true=文件挂载, false=目录挂载
+    pub enabled: bool,
+    pub metadata: Option<serde_json::Value>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+// 约束：同一 Tenant 的挂载路径不可嵌套、不可冲突
+
+// Tenant 组合配置
+pub struct TenantComposition {
+    pub tenant_id: Uuid,
+    pub working_layer_id: Uuid,
+    pub mounts: Vec<MountEntry>,
+}
+
+// 挂载点级别的 Layer 链
+// 每个 WorkingLayer 类型的挂载点有独立的 layer 链
+pub struct Layer {
+    pub layer_id: Uuid,
+    pub mount_entry_id: Uuid,        // 所属挂载点
+    pub tenant_id: Uuid,
+    pub parent_layer_id: Option<Uuid>,
+    pub name: Option<String>,        // snapshot 名称
+    pub is_working: bool,            // 是否是当前工作层
+    pub created_at: DateTime<Utc>,
+}
+
+// 发布某个挂载点的 Layer
+pub struct PublishInput {
+    pub mount_entry_id: Uuid,        // 要发布的挂载点
+    pub publish_name: String,        // 全局唯一的发布名称
+    pub description: Option<String>,
+    pub target: PublishTarget,
+    pub scope: PublishScope,
+}
+
+pub enum PublishTarget {
+    /// 发布特定的 snapshot（内容固定）
+    Layer(Uuid),
+    
+    /// 发布当前 working layer（实时跟随）
+    WorkingLayer,
+}
+
+pub struct PublishedMount {
+    pub publish_id: Uuid,
+    pub mount_entry_id: Uuid,        // 发布的挂载点
+    pub tenant_id: Uuid,             // Owner
+    pub target_type: String,         // "layer" 或 "working_layer"
+    pub layer_id: Option<Uuid>,      // 如果是特定 layer
+    pub publish_name: String,
+    pub description: Option<String>,
+    pub scope: PublishScope,
+    pub created_at: DateTime<Utc>,
+}
+
+pub enum PublishScope {
+    Public,                          // 所有租户可见
+    AllowList(Vec<Uuid>),           // 仅指定租户可见
+}
+```
+
 ### Layer API
 
 ```rust
@@ -228,6 +431,697 @@ POST /fs/copy
 {
     "from": "/data/source.txt",
     "to": "/data/dest.txt"
+}
+```
+
+### Tenant 管理操作
+
+```http
+# 列出所有 Tenant
+GET /tenants
+Query Parameters:
+  - limit: 限制返回数量 (默认100)
+  - offset: 偏移量 (默认0)
+  - status: 过滤状态 (active/suspended/deleted)
+Response: {
+    "tenants": [
+        {
+            "tenant_id": "uuid",
+            "tenant_name": "tenant-001",
+            "display_name": "AI Agent 001",
+            "status": "active",
+            "current_layer_id": "layer-uuid",
+            "storage_quota_bytes": 107374182400,
+            "storage_used_bytes": 10737418240,
+            "file_count": 12345,
+            "created_at": "2026-01-14T12:00:00Z",
+            "updated_at": "2026-01-14T12:00:00Z",
+            "metadata": {
+                "owner": "user@example.com",
+                "project": "ml-training"
+            }
+        }
+    ],
+    "total": 50,
+    "limit": 100,
+    "offset": 0
+}
+
+# 获取 Tenant 详情
+GET /tenants/{tenant_id}
+Response: {
+    "tenant_id": "uuid",
+    "tenant_name": "tenant-001",
+    "display_name": "AI Agent 001",
+    "status": "active",
+    "current_layer_id": "layer-uuid",
+    "storage_quota_bytes": 107374182400,
+    "storage_used_bytes": 10737418240,
+    "file_count": 12345,
+    "layer_count": 5,
+    "created_at": "2026-01-14T12:00:00Z",
+    "updated_at": "2026-01-14T12:00:00Z",
+    "last_access_at": "2026-01-15T10:30:00Z",
+    "metadata": {
+        "owner": "user@example.com",
+        "project": "ml-training",
+        "environment": "production"
+    }
+}
+
+# 创建 Tenant
+POST /tenants
+{
+    "tenant_name": "tenant-001",
+    "display_name": "AI Agent 001",
+    "storage_quota_bytes": 107374182400,
+    "metadata": {
+        "owner": "user@example.com",
+        "project": "ml-training"
+    }
+}
+Response: {
+    "tenant_id": "new-uuid",
+    "tenant_name": "tenant-001",
+    "display_name": "AI Agent 001",
+    "status": "active",
+    "current_layer_id": "base-layer-uuid",
+    "storage_quota_bytes": 107374182400,
+    "storage_used_bytes": 0,
+    "file_count": 0,
+    "layer_count": 1,
+    "created_at": "2026-01-15T10:00:00Z",
+    "updated_at": "2026-01-15T10:00:00Z"
+}
+
+# 更新 Tenant
+PUT /tenants/{tenant_id}
+{
+    "display_name": "AI Agent 001 (Updated)",
+    "storage_quota_bytes": 214748364800,
+    "metadata": {
+        "owner": "user@example.com",
+        "project": "ml-training",
+        "environment": "production"
+    }
+}
+Response: {
+    "tenant_id": "uuid",
+    "tenant_name": "tenant-001",
+    "display_name": "AI Agent 001 (Updated)",
+    "storage_quota_bytes": 214748364800,
+    "updated_at": "2026-01-15T11:00:00Z"
+}
+
+# 暂停 Tenant
+POST /tenants/{tenant_id}/suspend
+{
+    "reason": "Quota exceeded"
+}
+Response: {
+    "tenant_id": "uuid",
+    "status": "suspended",
+    "suspended_at": "2026-01-15T11:30:00Z"
+}
+
+# 恢复 Tenant
+POST /tenants/{tenant_id}/resume
+Response: {
+    "tenant_id": "uuid",
+    "status": "active",
+    "resumed_at": "2026-01-15T12:00:00Z"
+}
+
+# 删除 Tenant
+DELETE /tenants/{tenant_id}?force=false
+Query Parameters:
+  - force: 强制删除（忽略数据保留策略）
+Response: {
+    "tenant_id": "uuid",
+    "status": "deleted",
+    "deleted_at": "2026-01-15T12:30:00Z",
+    "data_retention_until": "2026-02-15T12:30:00Z"
+}
+
+# 获取 Tenant 统计信息
+GET /tenants/{tenant_id}/stats
+Response: {
+    "tenant_id": "uuid",
+    "storage": {
+        "used_bytes": 10737418240,
+        "quota_bytes": 107374182400,
+        "usage_percentage": 10.0,
+        "file_count": 12345,
+        "directory_count": 567
+    },
+    "layers": {
+        "total_count": 5,
+        "active_layer_id": "layer-uuid",
+        "base_layer_size": 1073741824,
+        "all_layers_size": 5368709120
+    },
+    "operations": {
+        "read_ops_24h": 100000,
+        "write_ops_24h": 50000,
+        "delete_ops_24h": 1000
+    },
+    "last_access_at": "2026-01-15T10:30:00Z"
+}
+
+# 获取 Tenant 的所有层
+GET /tenants/{tenant_id}/layers
+Response: {
+    "tenant_id": "uuid",
+    "layers": [
+        {
+            "layer_id": "uuid",
+            "name": "checkpoint-001",
+            "parent_layer_id": "parent-uuid",
+            "is_readonly": true,
+            "file_count": 1234,
+            "total_size": 1048576,
+            "created_at": "2026-01-14T12:00:00Z"
+        }
+    ]
+}
+
+# 清理 Tenant 数据（清理已删除文件、未使用块等）
+POST /tenants/{tenant_id}/cleanup
+{
+    "remove_deleted_files": true,
+    "vacuum_blocks": true,
+    "compress_layers": false
+}
+Response: {
+    "tenant_id": "uuid",
+    "cleanup_started_at": "2026-01-15T13:00:00Z",
+    "estimated_space_freed": 1073741824,
+    "job_id": "cleanup-job-uuid"
+}
+
+# 导出 Tenant 数据
+POST /tenants/{tenant_id}/export
+{
+    "format": "tar.gz",
+    "include_history": true,
+    "layer_id": "specific-layer-uuid"
+}
+Response: {
+    "tenant_id": "uuid",
+    "export_job_id": "export-job-uuid",
+    "status": "pending",
+    "created_at": "2026-01-15T14:00:00Z"
+}
+
+# 获取导出任务状态
+GET /tenants/{tenant_id}/export/{export_job_id}
+Response: {
+    "export_job_id": "export-job-uuid",
+    "status": "completed",
+    "download_url": "https://tarbox-server/downloads/export-uuid.tar.gz",
+    "size_bytes": 10737418240,
+    "expires_at": "2026-01-16T14:00:00Z"
+}
+
+# 导入 Tenant 数据
+POST /tenants/{tenant_id}/import
+{
+    "source_url": "https://storage.example.com/backup.tar.gz",
+    "merge_strategy": "replace",
+    "create_checkpoint": true
+}
+Response: {
+    "tenant_id": "uuid",
+    "import_job_id": "import-job-uuid",
+    "status": "pending",
+    "created_at": "2026-01-15T15:00:00Z"
+}
+```
+
+### 文件系统组合操作（Composition）
+
+> 参见 [Spec 18: 文件系统组合](./18-filesystem-composition.md)
+
+```http
+# 批量设置挂载配置（混合挂载）
+# 这是配置混合挂载的主要方式，会替换该 Tenant 的所有挂载配置
+PUT /tenants/{tenant_id}/mounts
+Content-Type: application/json
+{
+    "mounts": [
+        {
+            "virtual_path": "/workspace",
+            "is_file": false,
+            "source_type": "working_layer",
+            "mode": "rw"
+        },
+        {
+            "virtual_path": "/models",
+            "is_file": false,
+            "source_type": "layer",
+            "source_tenant_id": "model-hub-uuid",
+            "source_layer_id": "bert-base-layer-uuid",
+            "mode": "ro"
+        },
+        {
+            "virtual_path": "/data",
+            "is_file": false,
+            "published_layer_name": "imagenet-v1",
+            "source_subpath": "/train",
+            "mode": "cow"
+        },
+        {
+            "virtual_path": "/usr",
+            "is_file": false,
+            "source_type": "host",
+            "host_path": "/usr",
+            "mode": "ro"
+        },
+        {
+            "virtual_path": "/bin",
+            "is_file": false,
+            "source_type": "host",
+            "host_path": "/bin",
+            "mode": "ro"
+        },
+        {
+            "virtual_path": "/config.yaml",
+            "is_file": true,
+            "source_type": "host",
+            "host_path": "/etc/app/config.yaml",
+            "mode": "ro"
+        }
+    ]
+}
+Response: {
+    "tenant_id": "uuid",
+    "mounts_created": 6,
+    "mounts": [...]
+}
+
+# 导入挂载配置（使用简化的 source 格式）
+# name 用于 API 引用（snapshot/publish），path 是实际挂载路径
+POST /tenants/{tenant_id}/mounts/import
+Content-Type: application/json
+{
+    "mounts": [
+        {
+            "name": "workspace",
+            "path": "/workspace",
+            "source": "working_layer",
+            "mode": "rw"
+        },
+        {
+            "name": "models",
+            "path": "/models",
+            "source": "layer:model-hub:bert-base-v1",
+            "mode": "ro"
+        },
+        {
+            "name": "data",
+            "path": "/data",
+            "source": "published:imagenet-v1",
+            "subpath": "/train",
+            "mode": "cow"
+        },
+        {
+            "name": "usr",
+            "path": "/usr",
+            "source": "host:/usr",
+            "mode": "ro"
+        },
+        {
+            "name": "bin",
+            "path": "/bin",
+            "source": "host:/bin",
+            "mode": "ro"
+        },
+        {
+            "name": "config",
+            "path": "/config.yaml",
+            "file": true,
+            "source": "host:/etc/app/config.yaml",
+            "mode": "ro"
+        }
+    ]
+}
+Response: {
+    "tenant_id": "uuid",
+    "mounts_created": 6,
+    "mounts": [...]
+}
+
+# 导出挂载配置（JSON 格式，可转换为 TOML 供 CLI 使用）
+GET /tenants/{tenant_id}/mounts/export
+Response: {
+    "tenant_id": "uuid",
+    "tenant_name": "my-tenant",
+    "exported_at": "2026-01-29T12:00:00Z",
+    "mounts": [
+        {
+            "name": "workspace",
+            "path": "/workspace",
+            "source": "working_layer",
+            "mode": "rw"
+        },
+        {
+            "name": "models",
+            "path": "/models",
+            "source": "layer:model-hub:bert-base-v1",
+            "mode": "ro"
+        },
+        {
+            "name": "data",
+            "path": "/data",
+            "source": "published:imagenet-v1",
+            "subpath": "/train",
+            "mode": "cow"
+        },
+        {
+            "name": "usr",
+            "path": "/usr",
+            "source": "host:/usr",
+            "mode": "ro"
+        },
+        {
+            "name": "config",
+            "path": "/config.yaml",
+            "file": true,
+            "source": "host:/etc/app/config.yaml",
+            "mode": "ro"
+        }
+    ]
+}
+
+# 获取 Tenant 的挂载配置
+# 注意：挂载路径不可嵌套、不可冲突
+# name 用于 API 引用（snapshot/publish），virtual_path 是实际挂载路径
+GET /tenants/{tenant_id}/mounts
+Response: {
+    "tenant_id": "uuid",
+    "working_layer_id": "uuid",
+    "mounts": [
+        {
+            "mount_entry_id": "uuid",
+            "name": "workspace",
+            "virtual_path": "/workspace",
+            "is_file": false,
+            "source_type": "working_layer",
+            "mode": "rw",
+            "enabled": true
+        },
+        {
+            "mount_entry_id": "uuid",
+            "name": "models",
+            "virtual_path": "/models",
+            "is_file": false,
+            "source_type": "layer",
+            "source_tenant_id": "shared-models-tenant-uuid",
+            "source_layer_id": "layer-uuid",
+            "source_subpath": null,
+            "mode": "ro",
+            "enabled": true
+        },
+        {
+            "mount_entry_id": "uuid",
+            "name": "usr",
+            "virtual_path": "/usr",
+            "is_file": false,
+            "source_type": "host",
+            "host_path": "/usr",
+            "mode": "ro",
+            "enabled": true
+        },
+        {
+            "mount_entry_id": "uuid",
+            "name": "config",
+            "virtual_path": "/config.yaml",
+            "is_file": true,
+            "source_type": "host",
+            "host_path": "/etc/app/config.yaml",
+            "mode": "ro",
+            "enabled": true
+        }
+    ]
+}
+
+# 添加目录挂载
+# name 用于 API 引用（snapshot/publish），virtual_path 是实际挂载路径
+POST /tenants/{tenant_id}/mounts
+{
+    "name": "data",
+    "virtual_path": "/data",
+    "is_file": false,
+    "source_type": "layer",
+    "source_tenant_id": "data-tenant-uuid",
+    "source_layer_id": "dataset-layer-uuid",
+    "source_subpath": "/datasets/imagenet",
+    "mode": "cow"
+}
+Response: {
+    "mount_entry_id": "new-uuid",
+    "name": "data",
+    "virtual_path": "/data",
+    "is_file": false,
+    ...
+}
+
+# 添加单文件挂载
+POST /tenants/{tenant_id}/mounts
+{
+    "name": "settings",
+    "virtual_path": "/settings.json",
+    "is_file": true,
+    "source_type": "host",
+    "host_path": "/etc/app/settings.json",
+    "mode": "ro"
+}
+Response: {
+    "mount_entry_id": "new-uuid",
+    "name": "settings",
+    "virtual_path": "/settings.json",
+    "is_file": true,
+    ...
+}
+
+# 使用已发布的 Layer 名称添加挂载
+POST /tenants/{tenant_id}/mounts
+{
+    "name": "models",
+    "virtual_path": "/models",
+    "is_file": false,
+    "published_layer_name": "pretrained-bert-base",
+    "mode": "ro"
+}
+
+# 添加宿主机目录挂载
+POST /tenants/{tenant_id}/mounts
+{
+    "name": "usr",
+    "virtual_path": "/usr",
+    "is_file": false,
+    "source_type": "host",
+    "host_path": "/usr",
+    "mode": "ro"
+}
+
+# 更新挂载
+PUT /tenants/{tenant_id}/mounts/{mount_entry_id}
+{
+    "mode": "cow",
+    "enabled": true
+}
+Response: {
+    "mount_entry_id": "uuid",
+    "virtual_path": "/data",
+    "mode": "cow",
+    "enabled": true,
+    "updated_at": "2026-01-29T11:00:00Z"
+}
+
+# 删除挂载
+DELETE /tenants/{tenant_id}/mounts/{mount_entry_id}
+
+# 启用挂载
+POST /tenants/{tenant_id}/mounts/{mount_entry_id}/enable
+
+# 禁用挂载
+POST /tenants/{tenant_id}/mounts/{mount_entry_id}/disable
+
+# Snapshot 特定挂载点（使用挂载点名称，不是路径）
+POST /tenants/{tenant_id}/mounts/{mount_name}/snapshot
+{
+    "name": "memory-v1",
+    "description": "Memory after task 1"
+}
+Response: {
+    "layer_id": "new-layer-uuid",
+    "mount_entry_id": "mount-uuid",
+    "mount_name": "memory",
+    "name": "memory-v1",
+    "parent_layer_id": "previous-working-uuid",
+    "created_at": "2026-01-29T12:00:00Z"
+}
+
+# Snapshot 多个挂载点
+POST /tenants/{tenant_id}/snapshot
+{
+    "mounts": ["memory", "workspace"],
+    "name": "checkpoint-1",
+    "skip_unchanged": true
+}
+Response: {
+    "snapshots": [
+        {"mount_name": "memory", "layer_id": "new-layer-uuid"},
+        {"mount_name": "workspace", "skipped": true, "reason": "no changes"}
+    ]
+}
+
+# 发布挂载点的特定 Layer（内容固定）
+POST /tenants/{tenant_id}/mounts/{mount_name}/publish
+{
+    "publish_name": "bert-base-v1",
+    "description": "BERT base model weights",
+    "target": "layer",
+    "layer_id": "layer-uuid",
+    "scope": "public"
+}
+Response: {
+    "publish_id": "publish-uuid",
+    "mount_entry_id": "mount-uuid",
+    "mount_name": "models",
+    "tenant_id": "model-hub-uuid",
+    "target_type": "layer",
+    "layer_id": "layer-uuid",
+    "publish_name": "bert-base-v1",
+    "description": "BERT base model weights",
+    "scope": "public",
+    "published_at": "2026-01-29T12:00:00Z"
+}
+
+# 发布挂载点的 Working Layer（实时跟随）
+POST /tenants/{tenant_id}/mounts/{mount_name}/publish
+{
+    "publish_name": "agent1-memory",
+    "description": "Shared memory for agents",
+    "target": "working_layer",
+    "scope": "public"
+}
+Response: {
+    "publish_id": "publish-uuid",
+    "mount_entry_id": "mount-uuid",
+    "mount_name": "memory",
+    "tenant_id": "agent-001-uuid",
+    "target_type": "working_layer",
+    "layer_id": null,
+    "publish_name": "agent1-memory",
+    "description": "Shared memory for agents",
+    "scope": "public",
+    "published_at": "2026-01-29T12:00:00Z"
+}
+
+# 发布（仅指定 tenant 可访问）
+POST /tenants/{tenant_id}/mounts/{mount_name}/publish
+{
+    "publish_name": "private-model-v1",
+    "description": "Private fine-tuned model",
+    "target": "working_layer",
+    "scope": "allow_list",
+    "allowed_tenants": ["tenant-a-uuid", "tenant-b-uuid"]
+}
+
+# 取消发布
+DELETE /tenants/{tenant_id}/mounts/{mount_name}/publish
+
+# 获取 Tenant 已发布的挂载列表
+GET /tenants/{tenant_id}/published-mounts
+Response: {
+    "tenant_id": "uuid",
+    "published_mounts": [
+        {
+            "publish_id": "publish-uuid",
+            "mount_entry_id": "mount-uuid",
+            "mount_name": "memory",
+            "publish_name": "agent1-memory",
+            "target_type": "working_layer",
+            "layer_id": null,
+            "scope": "public",
+            "published_at": "2026-01-29T12:00:00Z"
+        }
+    ]
+}
+
+# 更新发布信息
+PUT /tenants/{tenant_id}/layers/{layer_id}/publish
+{
+    "description": "Updated description",
+    "scope": "public"
+}
+
+# 获取已发布的 Layer 列表
+GET /published-layers
+Query Parameters:
+  - scope: public|all (可选)
+  - owner_tenant_id: 过滤特定 owner (可选)
+Response: {
+    "published_layers": [
+        {
+            "layer_id": "layer-uuid",
+            "tenant_id": "model-hub-uuid",
+            "publish_name": "pretrained-bert-base",
+            "description": "BERT base model weights",
+            "scope": "public",
+            "layer_info": {
+                "name": "bert-base-v1",
+                "file_count": 15,
+                "total_size": 440000000
+            },
+            "published_at": "2026-01-15T10:00:00Z"
+        },
+        {
+            "layer_id": "layer-uuid",
+            "tenant_id": "data-hub-uuid",
+            "publish_name": "imagenet-dataset-v1",
+            "description": "ImageNet training dataset",
+            "scope": "public",
+            "published_at": "2026-01-10T08:00:00Z"
+        }
+    ]
+}
+
+# 获取已发布 Layer 详情
+GET /published-layers/{publish_name}
+Response: {
+    "layer_id": "layer-uuid",
+    "tenant_id": "model-hub-uuid",
+    "publish_name": "pretrained-bert-base",
+    "description": "BERT base model weights",
+    "scope": "public",
+    "allowed_tenants": null,
+    "layer_info": {
+        "name": "bert-base-v1",
+        "file_count": 15,
+        "total_size": 440000000,
+        "created_at": "2026-01-15T09:00:00Z"
+    },
+    "usage_count": 42,
+    "published_at": "2026-01-15T10:00:00Z"
+}
+
+# 解析路径（调试用）
+GET /tenants/{tenant_id}/resolve?path=/data/models/bert.bin
+Response: {
+    "path": "/data/models/bert.bin",
+    "resolved": {
+        "mount_entry_id": "uuid",
+        "mount_name": "data",
+        "virtual_path": "/data/models",
+        "source_type": "layer",
+        "source_tenant_id": "model-hub-uuid",
+        "source_layer_id": "layer-uuid",
+        "relative_path": "bert.bin",
+        "mode": "ro"
+    }
 }
 ```
 
@@ -478,6 +1372,19 @@ service TarboxService {
     rpc Create(CreateRequest) returns (CreateResponse);
     rpc Delete(DeleteRequest) returns (DeleteResponse);
     
+    // Tenant 操作
+    rpc ListTenants(ListTenantsRequest) returns (ListTenantsResponse);
+    rpc GetTenant(GetTenantRequest) returns (GetTenantResponse);
+    rpc CreateTenant(CreateTenantRequest) returns (CreateTenantResponse);
+    rpc UpdateTenant(UpdateTenantRequest) returns (UpdateTenantResponse);
+    rpc DeleteTenant(DeleteTenantRequest) returns (DeleteTenantResponse);
+    rpc SuspendTenant(SuspendTenantRequest) returns (SuspendTenantResponse);
+    rpc ResumeTenant(ResumeTenantRequest) returns (ResumeTenantResponse);
+    rpc GetTenantStats(GetTenantStatsRequest) returns (GetTenantStatsResponse);
+    rpc CleanupTenantData(CleanupTenantDataRequest) returns (CleanupTenantDataResponse);
+    rpc ExportTenantData(ExportTenantDataRequest) returns (ExportTenantDataResponse);
+    rpc ImportTenantData(ImportTenantDataRequest) returns (ImportTenantDataResponse);
+    
     // 层操作
     rpc ListLayers(ListLayersRequest) returns (ListLayersResponse);
     rpc CreateCheckpoint(CreateCheckpointRequest) returns (CreateCheckpointResponse);
@@ -527,6 +1434,172 @@ message WriteResponse {
     uint32 bytes_written = 1;
 }
 
+// Tenant 消息定义
+message ListTenantsRequest {
+    int32 limit = 1;
+    int32 offset = 2;
+    string status = 3;  // active, suspended, deleted
+}
+
+message ListTenantsResponse {
+    repeated TenantInfo tenants = 1;
+    int32 total = 2;
+}
+
+message TenantInfo {
+    string tenant_id = 1;
+    string tenant_name = 2;
+    string display_name = 3;
+    string status = 4;
+    string current_layer_id = 5;
+    int64 storage_quota_bytes = 6;
+    int64 storage_used_bytes = 7;
+    int64 file_count = 8;
+    int64 created_at = 9;
+    int64 updated_at = 10;
+    string metadata_json = 11;
+}
+
+message GetTenantRequest {
+    string tenant_id = 1;
+}
+
+message GetTenantResponse {
+    TenantInfo tenant = 1;
+    int64 layer_count = 2;
+    int64 last_access_at = 3;
+}
+
+message CreateTenantRequest {
+    string tenant_name = 1;
+    string display_name = 2;
+    int64 storage_quota_bytes = 3;
+    string metadata_json = 4;
+}
+
+message CreateTenantResponse {
+    TenantInfo tenant = 1;
+}
+
+message UpdateTenantRequest {
+    string tenant_id = 1;
+    string display_name = 2;
+    int64 storage_quota_bytes = 3;
+    string metadata_json = 4;
+}
+
+message UpdateTenantResponse {
+    TenantInfo tenant = 1;
+}
+
+message DeleteTenantRequest {
+    string tenant_id = 1;
+    bool force = 2;
+}
+
+message DeleteTenantResponse {
+    string tenant_id = 1;
+    string status = 2;
+    int64 deleted_at = 3;
+    int64 data_retention_until = 4;
+}
+
+message SuspendTenantRequest {
+    string tenant_id = 1;
+    string reason = 2;
+}
+
+message SuspendTenantResponse {
+    string tenant_id = 1;
+    string status = 2;
+    int64 suspended_at = 3;
+}
+
+message ResumeTenantRequest {
+    string tenant_id = 1;
+}
+
+message ResumeTenantResponse {
+    string tenant_id = 1;
+    string status = 2;
+    int64 resumed_at = 3;
+}
+
+message GetTenantStatsRequest {
+    string tenant_id = 1;
+}
+
+message GetTenantStatsResponse {
+    string tenant_id = 1;
+    StorageStats storage = 2;
+    LayerStats layers = 3;
+    OperationStats operations = 4;
+    int64 last_access_at = 5;
+}
+
+message StorageStats {
+    int64 used_bytes = 1;
+    int64 quota_bytes = 2;
+    double usage_percentage = 3;
+    int64 file_count = 4;
+    int64 directory_count = 5;
+}
+
+message LayerStats {
+    int32 total_count = 1;
+    string active_layer_id = 2;
+    int64 base_layer_size = 3;
+    int64 all_layers_size = 4;
+}
+
+message OperationStats {
+    int64 read_ops_24h = 1;
+    int64 write_ops_24h = 2;
+    int64 delete_ops_24h = 3;
+}
+
+message CleanupTenantDataRequest {
+    string tenant_id = 1;
+    bool remove_deleted_files = 2;
+    bool vacuum_blocks = 3;
+    bool compress_layers = 4;
+}
+
+message CleanupTenantDataResponse {
+    string tenant_id = 1;
+    int64 cleanup_started_at = 2;
+    int64 estimated_space_freed = 3;
+    string job_id = 4;
+}
+
+message ExportTenantDataRequest {
+    string tenant_id = 1;
+    string format = 2;  // tar.gz, zip
+    bool include_history = 3;
+    string layer_id = 4;
+}
+
+message ExportTenantDataResponse {
+    string tenant_id = 1;
+    string export_job_id = 2;
+    string status = 3;
+    int64 created_at = 4;
+}
+
+message ImportTenantDataRequest {
+    string tenant_id = 1;
+    string source_url = 2;
+    string merge_strategy = 3;  // replace, merge, skip
+    bool create_checkpoint = 4;
+}
+
+message ImportTenantDataResponse {
+    string tenant_id = 1;
+    string import_job_id = 2;
+    string status = 3;
+    int64 created_at = 4;
+}
+
 // ... 其他消息定义
 ```
 
@@ -573,6 +1646,426 @@ tarbox cp <source> <dest>
 tarbox mv <source> <dest>
 tarbox rm <path> [--recursive]
 tarbox mkdir <path> [--parents]
+```
+
+### 文件系统组合命令（Mount）
+
+> 混合挂载通过配置文件完成，不支持命令行逐条添加
+
+```bash
+# 从配置文件应用挂载（主要方式）
+tarbox mount apply --tenant <tenant-id> --config mounts.toml
+
+# 配置文件示例 (mounts.toml):
+# ----------------------------------------
+# [[mounts]]
+# name = "workspace"
+# path = "/workspace"
+# source = "working_layer"
+# mode = "rw"
+#
+# [[mounts]]
+# name = "models"
+# path = "/models"
+# source = "layer:model-hub:bert-base-v1"
+# mode = "ro"
+#
+# [[mounts]]
+# name = "data"
+# path = "/data"
+# source = "published:imagenet-v1"
+# subpath = "/train"
+# mode = "cow"
+#
+# [[mounts]]
+# name = "usr"
+# path = "/usr"
+# source = "host:/usr"
+# mode = "ro"
+#
+# [[mounts]]
+# name = "bin"
+# path = "/bin"
+# source = "host:/bin"
+# mode = "ro"
+#
+# [[mounts]]
+# name = "config"
+# path = "/config.yaml"
+# file = true
+# source = "host:/etc/app/config.yaml"
+# mode = "ro"
+# ----------------------------------------
+
+# 查看当前挂载配置
+tarbox mount list --tenant <tenant-id>
+  --json                               JSON 输出
+  --toml                               TOML 输出（可直接保存为配置文件）
+
+示例输出：
+NAME        PATH            TYPE  SOURCE                          MODE  ENABLED
+workspace   /workspace      dir   working_layer                   rw    true
+models      /models         dir   layer:model-hub:bert-base       ro    true
+usr         /usr            dir   host:/usr                       ro    true
+config      /config.yaml    file  host:/etc/app/config.yaml       ro    true
+
+# 导出当前配置到文件
+tarbox mount export --tenant <tenant-id> --output mounts.toml
+
+# 验证配置文件（不实际应用）
+tarbox mount validate --config mounts.toml
+
+# 清空所有挂载
+tarbox mount clear --tenant <tenant-id>
+
+# 删除单个挂载（使用挂载点名称）
+tarbox mount remove --tenant <tenant-id> --mount <mount-name>
+
+示例：
+tarbox mount remove --tenant uuid-123 --mount models
+
+# 启用/禁用挂载
+tarbox mount enable --tenant <tenant-id> --mount <mount-name>
+tarbox mount disable --tenant <tenant-id> --mount <mount-name>
+
+# 更新挂载配置
+tarbox mount update --tenant <tenant-id> --mount <mount-name> [options]
+  --mode <ro|rw|cow>                   更新挂载模式
+  --enabled <true|false>               启用/禁用
+
+示例：
+tarbox mount update --tenant uuid-123 --mount data --mode cow
+
+# 解析路径（调试用）
+tarbox mount resolve --tenant <tenant-id> /models/bert/config.json
+
+示例输出：
+Path:         /models/bert/config.json
+Mount Name:   models
+Mount Path:   /models (dir)
+Source:       layer:model-hub:bert-base-v1
+Relative:     bert/config.json
+Mode:         ro
+```
+
+#### 配置文件格式
+
+```toml
+# mounts.toml - Tarbox 混合挂载配置
+# 注意：name 用于 API 引用（如 snapshot/publish），path 是实际挂载路径
+
+# 工作层（可写）
+[[mounts]]
+name = "workspace"                       # API 引用名称（用于 snapshot/publish 命令）
+path = "/workspace"                      # 实际挂载路径
+source = "working_layer"
+mode = "rw"
+
+# 从其他 Tenant 的 Layer 挂载（只读）
+[[mounts]]
+name = "models"
+path = "/models"
+source = "layer:model-hub:bert-base-v1"  # 格式: layer:<tenant>:<layer>
+mode = "ro"
+
+# 从已发布的 Layer 挂载（写时复制）
+[[mounts]]
+name = "data"
+path = "/data"
+source = "published:imagenet-v1"         # 格式: published:<publish-name>
+subpath = "/train"                       # 可选：只挂载子目录
+mode = "cow"
+
+# 从宿主机挂载目录
+[[mounts]]
+name = "usr"
+path = "/usr"
+source = "host:/usr"                     # 格式: host:<host-path>
+mode = "ro"
+
+[[mounts]]
+name = "bin"
+path = "/bin"
+source = "host:/bin"
+mode = "ro"
+
+[[mounts]]
+name = "lib"
+path = "/lib"
+source = "host:/lib"
+mode = "ro"
+
+# 从宿主机挂载单个文件
+[[mounts]]
+name = "config"
+path = "/config.yaml"
+file = true                              # 标记为文件挂载
+source = "host:/etc/app/config.yaml"
+mode = "ro"
+
+# 可选字段
+[[mounts]]
+name = "cache"
+path = "/cache"
+source = "host:/var/cache/app"
+mode = "rw"
+enabled = false                          # 默认禁用
+```
+
+#### 字段说明
+
+| 字段 | 必需 | 说明 | 示例 |
+|------|------|------|------|
+| `name` | 是 | API 引用名称（用于 snapshot/publish 命令） | `name = "models"` |
+| `path` | 是 | 实际挂载路径 | `path = "/models"` |
+| `source` | 是 | 数据来源（见下表） | `source = "working_layer"` |
+| `mode` | 是 | 挂载模式 (ro/rw/cow) | `mode = "ro"` |
+| `file` | 否 | 是否为单文件挂载 | `file = true` |
+| `subpath` | 否 | 只挂载源的子目录 | `subpath = "/train"` |
+| `enabled` | 否 | 是否启用（默认 true） | `enabled = false` |
+
+#### Source 格式说明
+
+| 格式 | 说明 | 示例 |
+|------|------|------|
+| `working_layer` | 当前 Tenant 的工作层 | `source = "working_layer"` |
+| `host:<path>` | 宿主机目录/文件 | `source = "host:/usr"` |
+| `layer:<tenant>:<layer>` | 指定 Tenant 的 Layer | `source = "layer:model-hub:bert-v1"` |
+| `published:<name>` | 已发布的 Layer（按发布名称） | `source = "published:imagenet-v1"` |
+
+#### Mode 说明
+
+| Mode | 说明 |
+|------|------|
+| `ro` | 只读，写入返回 EROFS |
+| `rw` | 读写，直接写入源（仅 host 和 working_layer） |
+| `cow` | 写时复制，读取来自源，写入到 working_layer |
+
+### 文件系统组合操作 HTTP/CLI 对照表
+
+| 操作 | HTTP API | CLI |
+|------|----------|-----|
+| 批量设置挂载 | `PUT /tenants/{id}/mounts` | `tarbox mount apply --config` |
+| 导入挂载配置 | `POST /tenants/{id}/mounts/import` | `tarbox mount apply --config` |
+| 导出挂载配置 | `GET /tenants/{id}/mounts/export` | `tarbox mount export --output` |
+| 列出挂载配置 | `GET /tenants/{id}/mounts` | `tarbox mount list` |
+| 添加单个挂载 | `POST /tenants/{id}/mounts` | (使用配置文件) |
+| 更新挂载 | `PUT /tenants/{id}/mounts/{entry_id}` | `tarbox mount update --mount` |
+| 删除挂载 | `DELETE /tenants/{id}/mounts/{entry_id}` | `tarbox mount remove --mount` |
+| 启用挂载 | `POST /tenants/{id}/mounts/{entry_id}/enable` | `tarbox mount enable --mount` |
+| 禁用挂载 | `POST /tenants/{id}/mounts/{entry_id}/disable` | `tarbox mount disable --mount` |
+| 清空所有挂载 | (多次 DELETE) | `tarbox mount clear` |
+| 验证配置 | - | `tarbox mount validate --config` |
+| 解析路径 | `GET /tenants/{id}/resolve?path=` | `tarbox mount resolve` |
+| Snapshot 单个挂载 | `POST /tenants/{id}/mounts/{name}/snapshot` | `tarbox snapshot --mount` |
+| Snapshot 多个挂载 | `POST /tenants/{id}/snapshot` | `tarbox snapshot --mount x --mount y` |
+| 发布挂载 | `POST /tenants/{id}/mounts/{name}/publish` | `tarbox publish --mount` |
+| 取消发布 | `DELETE /tenants/{id}/mounts/{name}/publish` | `tarbox unpublish --mount` |
+| 列出已发布 (全局) | `GET /published-layers` | `tarbox layer list-published` |
+| 列出已发布 (Tenant) | `GET /tenants/{id}/published-mounts` | `tarbox publish list --tenant` |
+| 查看发布详情 | `GET /published-layers/{name}` | `tarbox layer publish-info` |
+| 更新发布信息 | `PUT /tenants/{id}/layers/{id}/publish` | `tarbox layer publish-update` |
+| 添加授权租户 | (PUT 更新 scope) | `tarbox layer publish-allow` |
+| 移除授权租户 | (PUT 更新 scope) | `tarbox layer publish-revoke` |
+
+### Layer 发布命令
+
+```bash
+# 列出已发布的 Layer
+tarbox layer list-published
+  --scope <public|all>                 过滤范围
+  --owner <tenant-id>                  过滤所有者
+  --json                               JSON 输出
+
+示例输出：
+PUBLISH_NAME            OWNER         SCOPE         SIZE      PUBLISHED
+pretrained-bert-base    model-hub     public        420MB     2026-01-15
+imagenet-dataset-v1     data-hub      public        140GB     2026-01-10
+private-model-v1        my-tenant     allow_list    850MB     2026-01-20
+
+# Snapshot 特定挂载点（使用挂载点名称，不是路径）
+tarbox snapshot --tenant <tenant-id> --mount memory --name "memory-v1"
+
+# Snapshot 多个挂载点
+tarbox snapshot --tenant <tenant-id> --mount memory --mount workspace --name "checkpoint-1"
+
+# Snapshot 所有 WorkingLayer 挂载点（跳过无变化的）
+tarbox snapshot --tenant <tenant-id> --all --name "full-checkpoint" --skip-unchanged
+
+# 发布挂载点的特定 Layer（内容固定）
+# 注意：--mount 使用挂载点名称（如 "models"），不是路径（如 "/models"）
+tarbox publish \
+    --tenant <tenant-id> \
+    --mount models \
+    --layer <layer-id-or-name> \
+    --name "my-model-v1" \
+    --description "My fine-tuned model" \
+    --scope public
+
+# 发布挂载点的 Working Layer（实时共享）
+tarbox publish \
+    --tenant <tenant-id> \
+    --mount memory \
+    --target working_layer \
+    --name "agent1-memory" \
+    --description "Shared memory for agents" \
+    --scope public
+
+# 发布（仅指定 tenant 可访问）
+tarbox publish \
+    --tenant <tenant-id> \
+    --mount data \
+    --target working_layer \
+    --name "private-dataset" \
+    --scope allow_list \
+    --allow tenant-a,tenant-b,tenant-c
+
+# 查看已发布 Layer 详情
+tarbox layer publish-info my-model-v1
+
+# 更新发布信息
+tarbox layer publish-update my-model-v1 \
+    --description "Updated description" \
+    --scope public
+
+# 添加授权租户（allow_list scope）
+tarbox layer publish-allow my-model-v1 tenant-d
+
+# 移除授权租户
+tarbox layer publish-revoke my-model-v1 tenant-d
+
+# 取消发布（使用挂载点名称）
+tarbox unpublish --tenant <tenant-id> --mount <mount-name>
+
+示例：
+tarbox unpublish --tenant uuid-123 --mount memory
+
+# 列出 Tenant 已发布的挂载
+tarbox publish list --tenant <tenant-id>
+  --json                               JSON 输出
+
+示例输出：
+MOUNT       PUBLISH_NAME      TARGET          SCOPE         PUBLISHED
+memory      agent1-memory     working_layer   public        2026-01-29
+models      bert-base-v1      layer           allow_list    2026-01-28
+```
+
+### Tenant 管理命令
+
+```bash
+# 列出所有 Tenant
+tarbox tenant list
+  --status <active|suspended|deleted>  过滤状态
+  --limit <n>                          限制数量
+  --json                               JSON 输出
+
+# 获取 Tenant 详情
+tarbox tenant get <tenant-id>
+  --json                               JSON 输出
+
+# 创建 Tenant
+tarbox tenant create <tenant-name>
+  --display-name <name>                显示名称
+  --quota <size>                       存储配额 (如: 100GB, 1TB)
+  --metadata <json>                    元数据 JSON
+
+示例：
+tarbox tenant create ai-agent-001 \
+  --display-name "AI Agent 001" \
+  --quota 100GB \
+  --metadata '{"owner":"user@example.com","project":"ml-training"}'
+
+# 更新 Tenant
+tarbox tenant update <tenant-id>
+  --display-name <name>                更新显示名称
+  --quota <size>                       更新存储配额
+  --metadata <json>                    更新元数据
+
+示例：
+tarbox tenant update uuid-123 --quota 200GB
+
+# 删除 Tenant
+tarbox tenant delete <tenant-id>
+  --force                              强制删除（跳过保留期）
+
+# 暂停 Tenant
+tarbox tenant suspend <tenant-id>
+  --reason <text>                      暂停原因
+
+示例：
+tarbox tenant suspend uuid-123 --reason "Quota exceeded"
+
+# 恢复 Tenant
+tarbox tenant resume <tenant-id>
+
+# 获取 Tenant 统计信息
+tarbox tenant stats <tenant-id>
+  --json                               JSON 输出
+
+示例输出：
+Storage:
+  Used: 10.0 GB / 100.0 GB (10.0%)
+  Files: 12,345
+  Directories: 567
+
+Layers:
+  Total: 5 layers
+  Active: checkpoint-003
+  Base size: 1.0 GB
+  All layers: 5.0 GB
+
+Operations (24h):
+  Reads: 100,000
+  Writes: 50,000
+  Deletes: 1,000
+
+Last Access: 2026-01-15 10:30:00
+
+# 获取 Tenant 的所有层
+tarbox tenant layers <tenant-id>
+  --tree                               树形显示
+  --json                               JSON 输出
+
+# 清理 Tenant 数据
+tarbox tenant cleanup <tenant-id>
+  --remove-deleted-files               清理已删除文件
+  --vacuum-blocks                      清理未使用块
+  --compress-layers                    压缩层
+  --dry-run                            仅显示将清理的内容
+
+示例：
+tarbox tenant cleanup uuid-123 --remove-deleted-files --vacuum-blocks
+
+# 导出 Tenant 数据
+tarbox tenant export <tenant-id>
+  --output <file>                      输出文件路径
+  --format <tar.gz|zip>                导出格式
+  --include-history                    包含历史层
+  --layer <layer-id>                   导出特定层
+
+示例：
+tarbox tenant export uuid-123 \
+  --output /backup/tenant-backup.tar.gz \
+  --include-history
+
+# 导入 Tenant 数据
+tarbox tenant import <tenant-id>
+  --input <file>                       输入文件路径
+  --merge-strategy <replace|merge|skip> 合并策略
+  --create-checkpoint                  导入后创建检查点
+
+示例：
+tarbox tenant import uuid-123 \
+  --input /backup/tenant-backup.tar.gz \
+  --merge-strategy replace \
+  --create-checkpoint
+
+# 切换到 Tenant 上下文（用于后续命令）
+tarbox tenant use <tenant-id>
+# 之后的文件系统命令会在该 tenant 下执行
+
+# 显示当前使用的 Tenant
+tarbox tenant current
 ```
 
 ### 层管理命令
@@ -697,6 +2190,26 @@ pub enum ErrorCode {
     LayerIsReadonly = 3002,
     LayerHasChildren = 3003,
     InvalidLayerChain = 3004,
+    
+    // Tenant 错误 (6xxx)
+    TenantNotFound = 6001,
+    TenantAlreadyExists = 6002,
+    TenantSuspended = 6003,
+    TenantQuotaExceeded = 6004,
+    TenantNameInvalid = 6005,
+    TenantHasActiveConnections = 6006,
+    
+    // 挂载/组合错误 (7xxx)
+    MountNotFound = 7001,
+    MountAlreadyExists = 7002,
+    MountPathConflict = 7003,
+    MountSourceNotFound = 7004,
+    MountAccessDenied = 7005,
+    LayerNotPublished = 7006,
+    PublishedLayerAccessDenied = 7007,
+    HostPathNotAllowed = 7008,
+    InvalidMountMode = 7009,
+    CircularMountDependency = 7010,
     
     // 数据库错误 (4xxx)
     DatabaseError = 4001,

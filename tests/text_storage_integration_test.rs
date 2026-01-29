@@ -186,6 +186,8 @@ async fn test_text_file_metadata_create() -> Result<()> {
             description: Some("Test layer for text metadata".to_string()),
             tags: None,
             created_by: "test".to_string(),
+            mount_entry_id: None,
+            is_working: false,
         })
         .await?;
 
@@ -245,6 +247,8 @@ async fn test_text_file_metadata_get() -> Result<()> {
             description: Some("Test layer for get metadata".to_string()),
             tags: None,
             created_by: "test".to_string(),
+            mount_entry_id: None,
+            is_working: false,
         })
         .await?;
 
@@ -305,6 +309,8 @@ async fn test_text_line_mappings() -> Result<()> {
             description: Some("Test layer for line mappings".to_string()),
             tags: None,
             created_by: "test".to_string(),
+            mount_entry_id: None,
+            is_working: false,
         })
         .await?;
 
@@ -409,6 +415,8 @@ async fn test_text_line_mapping_with_block_offsets() -> Result<()> {
             description: Some("Test layer for block offsets".to_string()),
             tags: None,
             created_by: "test".to_string(),
+            mount_entry_id: None,
+            is_working: false,
         })
         .await?;
 

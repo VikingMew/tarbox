@@ -87,6 +87,32 @@ pub trait LayerRepository: Send + Sync {
 
     async fn get_current_layer(&self, tenant_id: TenantId) -> Result<Option<LayerId>>;
     async fn set_current_layer(&self, tenant_id: TenantId, layer_id: LayerId) -> Result<()>;
+
+    // Mount-level layer chains (Task 21)
+    async fn create_initial_layers(
+        &self,
+        tenant_id: uuid::Uuid,
+        mount_entry_id: uuid::Uuid,
+    ) -> Result<(Layer, Layer)>;
+
+    async fn get_mount_layers(&self, mount_entry_id: uuid::Uuid) -> Result<Vec<Layer>>;
+
+    async fn get_working_layer(&self, mount_entry_id: uuid::Uuid) -> Result<Option<Layer>>;
+
+    async fn create_snapshot(
+        &self,
+        mount_entry_id: uuid::Uuid,
+        name: &str,
+        description: Option<String>,
+    ) -> Result<Layer>;
+
+    async fn batch_snapshot(
+        &self,
+        tenant_id: uuid::Uuid,
+        mount_names: &[String],
+        name: &str,
+        skip_unchanged: bool,
+    ) -> Result<Vec<crate::composition::SnapshotResult>>;
 }
 
 #[cfg_attr(any(test, feature = "mockall"), automock)]
@@ -249,4 +275,124 @@ mod tests {
         assert_eq!(block.data.len(), 4096);
         assert_eq!(block.size, 4096);
     }
+}
+
+// ============================================================================
+// Mount Entry Repository (Filesystem Composition - Task 19)
+// ============================================================================
+
+use super::models::mount_entry::{CreateMountEntry, MountEntry, UpdateMountEntry};
+use super::models::published_mount::{
+    PublishMountInput, PublishedMount, PublishedMountFilter, ResolvedPublished, UpdatePublishInput,
+};
+use std::path::Path;
+use uuid::Uuid;
+
+#[cfg_attr(any(test, feature = "mockall"), automock)]
+#[async_trait]
+pub trait MountEntryRepository: Send + Sync {
+    /// Create a new mount entry
+    async fn create_mount_entry(
+        &self,
+        tenant_id: Uuid,
+        input: CreateMountEntry,
+    ) -> Result<MountEntry>;
+
+    /// Get a mount entry by ID
+    async fn get_mount_entry(&self, mount_entry_id: Uuid) -> Result<Option<MountEntry>>;
+
+    /// Get a mount entry by tenant and name
+    async fn get_mount_entry_by_name(
+        &self,
+        tenant_id: Uuid,
+        name: &str,
+    ) -> Result<Option<MountEntry>>;
+
+    /// Get a mount entry by tenant and path (exact match)
+    async fn get_mount_entry_by_path(
+        &self,
+        tenant_id: Uuid,
+        path: &Path,
+    ) -> Result<Option<MountEntry>>;
+
+    /// List all mount entries for a tenant
+    async fn list_mount_entries(&self, tenant_id: Uuid) -> Result<Vec<MountEntry>>;
+
+    /// Update a mount entry
+    async fn update_mount_entry(
+        &self,
+        mount_entry_id: Uuid,
+        input: UpdateMountEntry,
+    ) -> Result<MountEntry>;
+
+    /// Delete a mount entry
+    async fn delete_mount_entry(&self, mount_entry_id: Uuid) -> Result<bool>;
+
+    /// Batch set mount entries (replace all for a tenant)
+    async fn set_mount_entries(
+        &self,
+        tenant_id: Uuid,
+        entries: Vec<CreateMountEntry>,
+    ) -> Result<Vec<MountEntry>>;
+
+    /// Check if a path conflicts with existing mounts
+    async fn check_path_conflict(
+        &self,
+        tenant_id: Uuid,
+        path: &Path,
+        is_file: bool,
+        exclude_id: Option<Uuid>,
+    ) -> Result<bool>;
+}
+
+// ============================================================================
+// Published Mount Repository (Filesystem Composition - Task 20)
+// ============================================================================
+
+#[cfg_attr(any(test, feature = "mockall"), automock)]
+#[async_trait]
+pub trait PublishedMountRepository: Send + Sync {
+    /// Publish a mount
+    async fn publish_mount(&self, input: PublishMountInput) -> Result<PublishedMount>;
+
+    /// Unpublish a mount
+    async fn unpublish_mount(&self, mount_entry_id: Uuid) -> Result<bool>;
+
+    /// Get published mount by name
+    async fn get_published_by_name(&self, publish_name: &str) -> Result<Option<PublishedMount>>;
+
+    /// Get publish info for a mount entry
+    async fn get_publish_info(&self, mount_entry_id: Uuid) -> Result<Option<PublishedMount>>;
+
+    /// List published mounts (global)
+    async fn list_published_mounts(
+        &self,
+        filter: PublishedMountFilter,
+    ) -> Result<Vec<PublishedMount>>;
+
+    /// List published mounts for a tenant
+    async fn list_tenant_published_mounts(&self, tenant_id: Uuid) -> Result<Vec<PublishedMount>>;
+
+    /// Update publish information
+    async fn update_publish(
+        &self,
+        publish_id: Uuid,
+        input: UpdatePublishInput,
+    ) -> Result<PublishedMount>;
+
+    /// Check if a tenant has access to a published mount
+    async fn check_access(&self, publish_name: &str, accessor_tenant_id: Uuid) -> Result<bool>;
+
+    /// Add a tenant to the allow list
+    async fn add_allowed_tenant(&self, publish_id: Uuid, tenant_id: Uuid) -> Result<()>;
+
+    /// Remove a tenant from the allow list
+    async fn remove_allowed_tenant(&self, publish_id: Uuid, tenant_id: Uuid) -> Result<()>;
+
+    /// Resolve published mount to actual layer (for working_layer, returns current working layer)
+    async fn resolve_published(
+        &self,
+        publish_name: &str,
+        accessor_tenant_id: Uuid,
+    ) -> Result<ResolvedPublished>;
 }

@@ -51,6 +51,8 @@ impl<'a> TenantMapper<'a> {
                 description: Some(format!("PVC: {}/{}", namespace, pvc_name)),
                 tags: None,
                 created_by: "csi-driver".to_string(),
+                mount_entry_id: None,
+                is_working: false,
             })
             .await
             .context("Failed to create base layer")?;

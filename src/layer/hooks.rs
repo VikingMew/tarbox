@@ -643,6 +643,8 @@ mod tests {
             tags: None,
             created_at: chrono::Utc::now(),
             created_by: "test".to_string(),
+            mount_entry_id: None,
+            is_working: false,
         };
 
         let info = LayerInfo::from_layer(&layer, true);
@@ -666,6 +668,8 @@ mod tests {
             tags: None,
             created_at: chrono::Utc::now(),
             created_by: "user".to_string(),
+            mount_entry_id: None,
+            is_working: false,
         };
 
         let info = LayerInfo::from_layer(&layer, false);
@@ -693,6 +697,8 @@ mod tests {
             tags: None,
             created_at: chrono::Utc::now(),
             created_by: "admin".to_string(),
+            mount_entry_id: None,
+            is_working: false,
         };
 
         let info = LayerInfo::from_layer(&layer, true);
